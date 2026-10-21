@@ -77,7 +77,7 @@ try to work around it.
 
 ### Templates
 
-- `windows-mcp`: exactly one Windows host (SSH or WinRM) → `WINDOWS_*` variables.
+- `windows-mcp`: one or more Windows hosts (SSH or WinRM) → `WINDOWS_MCP_HOSTS`; tools take `host` (windows-mcp 2.0+; with a single host the old `WINDOWS_*` variables are set too).
 - `ubuntu-mcp`: Linux hosts → `UBUNTU_MCP_HOSTS`.
 - `mikrotik-mcp`: MikroTik devices → `MIKROTIK_INVENTORY`.
 - `inventory`: any server built to `SERVER-SPEC.md`; hosts go as inline JSON into the

@@ -9,10 +9,10 @@ import json
 TEMPLATES = {
     "windows-mcp": {
         "label": "windows-mcp",
-        "description": "One Windows machine over SSH or WinRM (WINDOWS_* variables).",
+        "description": "One or more Windows machines over SSH or WinRM (WINDOWS_MCP_HOSTS; windows-mcp 2.0+ for several).",
         "kinds": ["windows"],
         "min_hosts": 1,
-        "max_hosts": 1,
+        "max_hosts": None,
     },
     "ubuntu-mcp": {
         "label": "ubuntu-mcp",
@@ -51,7 +51,19 @@ class ResolveError(Exception):
 
 
 def _windows(hosts: list[dict], _server: dict) -> dict:
-    h = hosts[0]
+    items = standard_hosts(hosts)
+    for item, h in zip(items, hosts):
+        item["protocol"] = h["protocol"]
+        if h.get("use_ssl"):
+            item["use_ssl"] = True
+    env = {"WINDOWS_MCP_HOSTS": json.dumps({"hosts": items}, ensure_ascii=False)}
+    if len(hosts) == 1:
+        # Also the original single-host variables, for windows-mcp versions before 2.0.
+        env.update(_windows_legacy(hosts[0]))
+    return env
+
+
+def _windows_legacy(h: dict) -> dict:
     env = {
         "WINDOWS_HOST": h["address"],
         "WINDOWS_USERNAME": h["username"],

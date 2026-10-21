@@ -113,7 +113,7 @@ already running keep working.
 
 | Template | Hosts | What the server receives |
 | --- | --- | --- |
-| windows-mcp | exactly 1 Windows host | `WINDOWS_HOST`, `WINDOWS_USERNAME`, `WINDOWS_PASSWORD` / `WINDOWS_SSH_KEY`, port, transport, read-only |
+| windows-mcp | 1+ Windows hosts (SSH or WinRM) | `WINDOWS_MCP_HOSTS` (inline JSON inventory); with one host also the original `WINDOWS_HOST`, `WINDOWS_PASSWORD`, … for windows-mcp before 2.0 |
 | ubuntu-mcp | 1+ Linux hosts | `UBUNTU_MCP_HOSTS` (inline JSON inventory) |
 | mikrotik-mcp | 1+ MikroTik devices | `MIKROTIK_INVENTORY` (inline JSON inventory) |
 | inventory | 1+ hosts of any kind | inline JSON host list in the variable you name (any server built to SERVER-SPEC) |

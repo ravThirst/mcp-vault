@@ -72,6 +72,7 @@ instead of guessing.
 | Connect lazily on first tool call; answer `initialize` fast | Clients give a server ~30 s to start; a down host must not break startup |
 | Nothing but JSON-RPC on stdout (no `print`); logs to stderr | Stray stdout corrupts the MCP stream; stderr goes to the vault's masked log |
 | Every tool takes optional `host`; unknown/missing host errors list the valid names | The model can correct itself in one step |
+| Expected failures (bad config, unknown host, refusals, unreachable host) are returned as text or raised as `mcp.server.mcpserver.exceptions.ToolError`, never as plain exceptions | SDK 2.x treats any other exception as a crash and shows the model only "Error executing tool", hiding the message it needs |
 | `<prefix>_list_hosts` and `<prefix>_test_connection` exist | Same first debugging step on every server |
 | Every tool has annotations: `READ`, `WRITE` or `DESTRUCTIVE` from the template | Clients decide what needs confirmation from these hints |
 | `<PREFIX>_MCP_READONLY=true` and per-host `readonly` refuse write tools | One switch to make a server safe to explore with |
