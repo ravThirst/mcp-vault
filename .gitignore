@@ -1,0 +1,20 @@
+# Per-machine environment (each PC builds its own via "MCP Vault.bat")
+.venv/
+__pycache__/
+*.pyc
+
+# Share zips built by "Make share zip.bat"
+*.zip
+
+# Personal notes about your own servers
+NOTES-local.md
+
+# The vault, logs and backups live in %APPDATA%\mcp-vault, never in this folder.
+# These patterns are a safety net in case MCPVAULT_HOME is pointed here.
+vault.json
+vault.json.prev
+agent.json
+agent.spawn
+*.enc
+logs/
+backups/

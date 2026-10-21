@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Vault</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f1f3f6; --border: #dfe3e8; --text: #1b1f24; --muted: #5f6b7a;
+  --accent: #2f6fde; --accent-text: #ffffff; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030; --info: #4c5fd5;
+  --ok-bg: #e5f5ec; --warn-bg: #fdf3e1; --bad-bg: #fde8e8; --info-bg: #e9ecfb;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  --radius: 10px; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418; --panel: #191d23; --panel-2: #20252c; --border: #2c333c; --text: #e6e9ed; --muted: #97a3b1;
+    --accent: #5b8ff0; --accent-text: #0d1117; --ok: #4cc286; --warn: #e0a640; --bad: #f07171; --info: #8b9cf4;
+    --ok-bg: #16301f; --warn-bg: #33270f; --bad-bg: #3a1a1a; --info-bg: #1e2340; --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.hidden { display: none !important; }
+
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--border); }
+.bar { max-width: 1180px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 16px; }
+.brand svg { color: var(--accent); }
+nav { display: flex; gap: 2px; flex-wrap: wrap; }
+nav button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+nav button:hover { background: var(--panel-2); color: var(--text); }
+nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+.spacer { flex: 1; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
+h2 { font-size: 18px; margin: 0; }
+.section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.section-head p { margin: 2px 0 0; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--panel);
+  padding: 6px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--panel-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn.danger { color: var(--bad); }
+.btn.sm { padding: 3px 9px; font-size: 12.5px; }
+.btn:disabled { opacity: .55; cursor: default; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.card.off { opacity: .6; }
+.card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.card-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.tag.add, .tag.ok { background: var(--ok-bg); color: var(--ok); }
+.tag.update, .tag.info { background: var(--info-bg); color: var(--info); }
+.tag.replace, .tag.warn { background: var(--warn-bg); color: var(--warn); }
+.tag.remove, .tag.bad { background: var(--bad-bg); color: var(--bad); }
+.tag.keep { background: var(--panel-2); color: var(--muted); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); flex: none; }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.run { background: var(--info); }
+.status { font-size: 12.5px; padding: 6px 9px; border-radius: 7px; background: var(--panel-2); color: var(--muted); overflow-wrap: anywhere; }
+.status.ok { background: var(--ok-bg); color: var(--ok); } .status.bad { background: var(--bad-bg); color: var(--bad); }
+.status.warn { background: var(--warn-bg); color: var(--warn); }
+
+.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; box-shadow: var(--shadow); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; background: var(--panel-2); }
+tr:last-child td { border-bottom: 0; }
+td .actions { margin: 0; padding: 0; flex-wrap: nowrap; }
+
+.empty { text-align: center; padding: 40px 16px; color: var(--muted); background: var(--panel); border: 1px dashed var(--border); border-radius: var(--radius); }
+
+dialog { border: 1px solid var(--border); border-radius: 14px; padding: 0; background: var(--panel); color: var(--text); width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(10,14,20,.45); }
+.dlg-head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.dlg-head h3 { margin: 0; font-size: 16px; }
+.dlg-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.dlg-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; position: sticky; bottom: 0; background: var(--panel); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > span { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.field small { color: var(--muted); font-size: 12px; }
+.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.row > .field { flex: 1 1 140px; }
+input[type=text], input[type=password], input[type=number], select, textarea {
+  width: 100%; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 7px 9px; min-width: 0; }
+textarea { resize: vertical; min-height: 64px; font-family: var(--mono); font-size: 13px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; border-color: var(--accent); }
+.check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.secret { display: flex; gap: 6px; }
+.secret input { flex: 1; }
+.envrow { display: grid; grid-template-columns: 1fr 1.4fr auto auto auto; gap: 6px; align-items: center; }
+.envrow input { font-family: var(--mono); font-size: 12.5px; }
+.list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.error { color: var(--bad); font-size: 13px; min-height: 1em; }
+pre.log { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 55vh; overflow: auto; font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+
+#login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+#login .card { width: min(380px, 100%); padding: 26px; gap: 14px; }
+#login h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 8px; }
+
+.toasts { position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: calc(100vw - 32px); }
+.toast { background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 9px; box-shadow: 0 6px 18px rgba(0,0,0,.2); font-size: 13.5px; max-width: 420px; }
+.toast.bad { background: var(--bad); color: #fff; }
+
+.client-card .change { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; }
+.kv div:nth-child(odd) { color: var(--muted); }
+.kv div { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .envrow { grid-template-columns: 1fr 1fr; }
+  .kv { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <form class="card" id="login-form" autocomplete="off">
+    <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> MCP Vault</h1>
+    <p class="muted" id="login-text" style="margin:0"></p>
+    <label class="field"><span>Master password</span><input type="password" id="pw1" autofocus></label>
+    <label class="field" id="pw2-wrap"><span>Repeat password</span><input type="password" id="pw2"></label>
+    <div class="error" id="login-error"></div>
+    <button class="btn primary" id="login-btn" type="submit" style="justify-content:center"></button>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <div class="bar">
+      <div class="brand"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>MCP Vault</div>
+      <nav id="nav"></nav>
+      <div class="spacer"></div>
+      <span class="badge" id="lock-info"></span>
+      <button class="btn sm" id="lock-btn" title="Lock the vault; running servers keep working">Lock</button>
+    </div>
+  </header>
+  <main id="view"></main>
+</div>
+
+<dialog id="dlg"></dialog>
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const PROPS = new Set(["value", "checked", "disabled", "selected", "type", "placeholder", "rows", "min", "max"]);
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (PROPS.has(k)) el[k] = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+class HttpError extends Error { constructor(status, msg, body) { super(msg); this.status = status; this.body = body; } }
+async function api(method, path, body) {
+  const r = await fetch(path, { method, credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-MCPVault": "1" },
+    body: body === undefined ? undefined : JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && path !== "/api/login") { showLogin("unlock"); throw new HttpError(401, j.error || "Locked", j); }
+  if (!r.ok) throw new HttpError(r.status, j.error || r.statusText, j);
+  return j;
+}
+function toast(msg, bad = false) {
+  const t = h("div", { class: "toast" + (bad ? " bad" : "") }, msg);
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), bad ? 7000 : 3500);
+}
+const fail = (e) => { if (!(e instanceof HttpError && e.status === 401)) toast(e.message, true); };
+
+let S = null;
+let tab = (() => { try { return localStorage.getItem("mcpvault.tab") || "servers"; } catch { return "servers"; } })();
+const TABS = [["servers", "Servers"], ["hosts", "Hosts"], ["apps", "Apply to apps"], ["import", "Import"], ["settings", "Settings"]];
+
+// ---------------------------------------------------------------- login
+
+let loginMode = "unlock";
+function showLogin(mode) {
+  loginMode = mode;
+  $("#app").classList.add("hidden");
+  $("#login").classList.remove("hidden");
+  closeDialog();
+  $("#pw2-wrap").classList.toggle("hidden", mode !== "create");
+  $("#login-text").textContent = mode === "create"
+    ? "Create your vault. All hosts, passwords and MCP server settings are encrypted with this password. It cannot be recovered if you forget it."
+    : "Enter your master password to manage servers and credentials.";
+  $("#login-btn").textContent = mode === "create" ? "Create vault" : "Unlock";
+  $("#login-error").textContent = "";
+  $("#pw1").value = ""; $("#pw2").value = "";
+  setTimeout(() => $("#pw1").focus(), 0);
+}
+$("#login-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const pw = $("#pw1").value;
+  $("#login-error").textContent = "";
+  if (loginMode === "create" && pw !== $("#pw2").value) { $("#login-error").textContent = "The passwords do not match."; return; }
+  $("#login-btn").disabled = true;
+  try {
+    await api("POST", loginMode === "create" ? "/api/create" : "/api/login", { password: pw });
+    await refresh();
+    showApp();
+  } catch (e) { $("#login-error").textContent = e.message; }
+  finally { $("#login-btn").disabled = false; }
+});
+
+function showApp() {
+  $("#login").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  render();
+}
+$("#lock-btn").addEventListener("click", async () => { await api("POST", "/api/lock", {}).catch(() => {}); showLogin("unlock"); });
+
+async function refresh() { S = await api("GET", "/api/data"); }
+
+function render() {
+  const nav = $("#nav");
+  nav.replaceChildren(...TABS.map(([id, label]) => h("button", { class: id === tab ? "active" : "", onclick: () => go(id) }, label)));
+  const m = S.settings.auto_lock_minutes;
+  $("#lock-info").textContent = m ? `Unlocked · auto-lock after ${m} min idle` : "Unlocked · no auto-lock";
+  const view = $("#view");
+  view.replaceChildren();
+  ({ servers: viewServers, hosts: viewHosts, apps: viewApps, import: viewImport, settings: viewSettings })[tab](view);
+}
+function go(id) { tab = id; try { localStorage.setItem("mcpvault.tab", id); } catch {} render(); }
+async function reload() { try { await refresh(); render(); } catch (e) { fail(e); } }
+
+// ---------------------------------------------------------------- dialogs
+
+function closeDialog() { const d = $("#dlg"); if (d.open) d.close(); d.replaceChildren(); }
+function openDialog(title, body, buttons = [], wide = false) {
+  const d = $("#dlg");
+  d.style.width = wide ? "min(860px, calc(100vw - 32px))" : "";
+  d.replaceChildren(
+    h("div", { class: "dlg-head" }, h("h3", {}, title), h("div", { class: "spacer" }),
+      h("button", { class: "btn sm", onclick: closeDialog, "aria-label": "Close" }, "✕")),
+    h("div", { class: "dlg-body" }, body),
+    buttons.length ? h("div", { class: "dlg-foot" }, buttons) : null);
+  d.showModal();
+}
+const field = (label, input, hint) => h("label", { class: "field" }, h("span", {}, label), input, hint ? h("small", {}, hint) : null);
+const check = (label, input) => h("label", { class: "check" }, input, label);
+
+function secretInput(isSet, revealFn, value = "") {
+  const input = h("input", { type: "password", value, placeholder: isSet ? "•••••••• (unchanged)" : "", autocomplete: "new-password" });
+  const btn = h("button", { class: "btn sm", type: "button", title: "Show / hide" }, "Show");
+  btn.addEventListener("click", async () => {
+    if (input.type === "password") {
+      if (isSet && input.value === "" && revealFn) { try { input.value = await revealFn(); } catch (e) { fail(e); return; } }
+      input.type = "text"; btn.textContent = "Hide";
+    } else { input.type = "password"; btn.textContent = "Show"; }
+  });
+  return { el: h("div", { class: "secret" }, input, btn), input };
+}
+
+// ---------------------------------------------------------------- servers
+
+function serverStatus(s) {
+  const st = S.status.servers[s.id];
+  const running = S.running[s.id] || 0;
+  return { st, running, dot: running ? "run" : st ? (st.ok ? "ok" : "bad") : "" };
+}
+
+function viewServers(view) {
+  view.append(h("div", { class: "section-head" },
+    h("div", {}, h("h2", {}, "MCP servers"),
+      h("p", { class: "muted small" }, "Each server is started by the vault launcher with its hosts and secrets injected; nothing sensitive is written to app config files.")),
+    h("div", { class: "spacer" }),
+    h("button", { class: "btn primary", onclick: () => editServer(null) }, "+ Add server")));
+  if (!S.servers.length) {
+    view.append(h("div", { class: "empty" }, "No servers yet. ",
+      h("a", { href: "#", onclick: (e) => { e.preventDefault(); go("import"); } }, "Import your existing MCP configs"), " or add one."));
+    return;
+  }
+  const hosts = Object.fromEntries(S.hosts.map((x) => [x.id, x]));
+  view.append(h("div", { class: "grid" }, S.servers.map((s) => {
+    const { st, running, dot } = serverStatus(s);
+    const tpl = S.meta.templates[s.template];
+    return h("div", { class: "card" + (s.enabled ? "" : " off") },
+      h("div", { class: "card-head" }, h("span", { class: "dot " + dot, title: running ? `${running} running` : "" }),
+        h("b", { class: "mono", title: s.id }, s.id), h("span", { class: "badge" }, tpl ? tpl.label : s.template),
+        h("div", { class: "spacer" }),
+        h("label", { class: "check small", title: "Disabled servers are removed from apps on the next apply" },
+          h("input", { type: "checkbox", checked: s.enabled, onchange: (e) => toggleServer(s, e.target.checked) }), "Enabled")),
+      s.description ? h("div", { class: "muted small" }, s.description) : null,
+      s.hosts.length ? h("div", { class: "chips" }, s.hosts.map((hid) => {
+        const x = hosts[hid];
+        return h("span", { class: "chip", title: x ? `${x.username}@${x.address}:${x.port}` : "" }, x ? x.name : "missing host");
+      })) : null,
+      h("div", { class: "small muted" },
+        "Apps: ", s.clients.length ? s.clients.map((c) => S.meta.clients[c]?.label || c).join(", ") : "none",
+        running ? ` · ${running} running` : ""),
+      st ? h("div", { class: "status " + (st.ok ? "ok" : "bad") }, `${st.time} · ${st.summary}`) : null,
+      h("div", { class: "actions" },
+        h("button", { class: "btn sm", onclick: (e) => testServer(s, e.target) }, "Test"),
+        h("button", { class: "btn sm", onclick: () => showLogs(s) }, "Logs"),
+        h("button", { class: "btn sm", onclick: () => editServer(s) }, "Edit"),
+        h("div", { class: "spacer" }),
+        h("button", { class: "btn sm danger", onclick: () => deleteServer(s) }, "Delete")));
+  })));
+}
+
+function serverPayload(s) {
+  return { ...s, original_id: s.id, secret_env: Object.fromEntries(Object.keys(s.secret_env).map((k) => [k, null])) };
+}
+async function toggleServer(s, enabled) {
+  try { await api("POST", "/api/servers", { ...serverPayload(s), enabled }); await reload(); toast(`${s.id} ${enabled ? "enabled" : "disabled"}. Apply to apps to update them.`); }
+  catch (e) { fail(e); reload(); }
+}
+async function deleteServer(s) {
+  if (!confirm(`Delete server "${s.id}" from the vault? Its app entries are removed on the next apply.`)) return;
+  try { await api("DELETE", `/api/servers/${encodeURIComponent(s.id)}`); await reload(); toast("Server deleted"); } catch (e) { fail(e); }
+}
+
+async function testServer(s, btn) {
+  btn.disabled = true; btn.textContent = "Testing…";
+  try {
+    const r = await api("POST", `/api/servers/${encodeURIComponent(s.id)}/test`, {});
+    await refresh(); render(); showTestResult(s, r);
+  } catch (e) { fail(e); btn.disabled = false; btn.textContent = "Test"; }
+}
+function showTestResult(s, r) {
+  const rows = [];
+  if (r.server_info?.name) rows.push(["Server", `${r.server_info.name} ${r.server_info.version || ""}`]);
+  if (r.protocol) rows.push(["Protocol", r.protocol]);
+  if (r.startup_ms != null) rows.push(["Startup", `${r.startup_ms} ms`]);
+  if (r.tools) rows.push(["Tool annotations", `${r.annotated} of ${r.tools.length} tools declare read-only / destructive hints`]);
+  if (r.has_instructions != null) rows.push(["Instructions", r.has_instructions ? "provided" : "none"]);
+  openDialog(`Test: ${s.id}`, [
+    h("div", { class: "status " + (r.ok ? "ok" : "bad") }, r.summary),
+    rows.length ? h("div", { class: "kv" }, rows.flat().map((x) => h("div", {}, x))) : null,
+    r.tools?.length ? field("Tools", h("div", { class: "chips" }, r.tools.map((t) => h("span", { class: "chip" }, t)))) : null,
+    r.stdout_noise ? h("div", { class: "status bad" }, "The server printed non-JSON text on stdout, which can break MCP clients: ", r.stdout_noise.join(" | ")) : null,
+    r.stderr ? field("stderr (secrets masked)", h("pre", { class: "log" }, r.stderr)) : null,
+  ], [h("button", { class: "btn", onclick: closeDialog }, "Close")], true);
+}
+
+async function showLogs(s) {
+  const pre = h("pre", { class: "log" }, "Loading…");
+  const pathEl = h("div", { class: "muted small mono" });
+  const load = async () => {
+    try { const r = await api("GET", `/api/servers/${encodeURIComponent(s.id)}/logs?lines=500`);
+      pre.textContent = r.text || "(no log yet: the log fills when an app starts this server)"; pathEl.textContent = r.path;
+      pre.scrollTop = pre.scrollHeight; } catch (e) { fail(e); }
+  };
+  openDialog(`Logs: ${s.id}`, [pathEl, pre], [h("button", { class: "btn", onclick: load }, "Refresh"), h("button", { class: "btn primary", onclick: closeDialog }, "Close")], true);
+  load();
+}
+
+function editServer(s) {
+  const isNew = !s;
+  const sameTpl = (t) => S.servers.find((x) => x.template === t);
+  const v = s ? structuredClone(s) : { id: "", description: "", template: "generic", command: "", args: [], cwd: "", env: {}, secret_env: {}, hosts: [], clients: Object.keys(S.meta.clients), enabled: true };
+  const envRows = [
+    ...Object.entries(v.env).map(([k, val]) => ({ key: k, orig: k, value: val, secret: false, keep: false })),
+    ...Object.entries(v.secret_env).map(([k, isSet]) => ({ key: k, orig: k, value: "", secret: true, keep: true, unset: !isSet })),
+  ];
+  const invIn = h("input", { type: "text", value: v.inventory_env || "", class: "mono", placeholder: "e.g. PROXMOX_MCP_HOSTS" });
+  const invField = field("Inventory variable", invIn, "The server reads its host list (inline JSON, SERVER-SPEC format) from this variable.");
+
+  const idIn = h("input", { type: "text", value: v.id, placeholder: "e.g. office_pc", class: "mono" });
+  const descIn = h("input", { type: "text", value: v.description });
+  const tplSel = h("select", {}, Object.entries(S.meta.templates).map(([k, t]) => h("option", { value: k, selected: k === v.template }, t.label)));
+  const tplHint = h("small");
+  const cmdIn = h("input", { type: "text", value: v.command, class: "mono", placeholder: "C:\\path\\to\\.venv\\Scripts\\python.exe" });
+  const argsIn = h("textarea", { rows: 2, value: v.args.join("\n"), placeholder: "one argument per line" });
+  const cwdIn = h("input", { type: "text", value: v.cwd, class: "mono", placeholder: "(optional)" });
+  const hostBox = h("div", { class: "list" });
+  const envBox = h("div", { style: "display:flex;flex-direction:column;gap:6px" });
+  const clientBoxes = Object.entries(S.meta.clients).map(([k, c]) => ({ k, el: h("input", { type: "checkbox", checked: v.clients.includes(k) }), label: c.label }));
+  const enabledIn = h("input", { type: "checkbox", checked: v.enabled });
+  const err = h("div", { class: "error" });
+  let selectedHosts = new Set(v.hosts);
+
+  function renderHosts() {
+    const t = S.meta.templates[tplSel.value];
+    tplHint.textContent = t.description;
+    invField.style.display = (t.options || []).includes("inventory_env") ? "" : "none";
+    hostBox.parentElement && (hostBox.parentElement.style.display = t.max_hosts === 0 ? "none" : "");
+    const ok = S.hosts.filter((x) => t.kinds.includes(x.kind));
+    hostBox.replaceChildren(...(ok.length ? ok.map((x) => {
+      const cb = h("input", { type: t.max_hosts === 1 ? "radio" : "checkbox", name: "srv-host", checked: selectedHosts.has(x.id),
+        onchange: () => { if (t.max_hosts === 1) selectedHosts = new Set([x.id]); else cb.checked ? selectedHosts.add(x.id) : selectedHosts.delete(x.id); } });
+      return check(h("span", {}, h("b", {}, x.name), h("span", { class: "muted mono small" }, `  ${x.username}@${x.address}:${x.port}`)), cb);
+    }) : [h("div", { class: "muted small" }, `No ${t.kinds.map((k) => S.meta.kinds[k]).join("/")} hosts yet. Add them on the Hosts tab.`)]));
+  }
+  tplSel.addEventListener("change", () => {
+    selectedHosts = new Set([...selectedHosts].filter((id) => S.meta.templates[tplSel.value].kinds.includes(S.hosts.find((x) => x.id === id)?.kind)));
+    const ref = sameTpl(tplSel.value);
+    if (isNew && ref && !cmdIn.value) { cmdIn.value = ref.command; argsIn.value = ref.args.join("\n"); cwdIn.value = ref.cwd; }
+    renderHosts();
+  });
+
+  function renderEnv() {
+    envBox.replaceChildren(...envRows.map((row, i) => {
+      const keyIn = h("input", { type: "text", value: row.key, placeholder: "NAME", oninput: (e) => { row.key = e.target.value; } });
+      const valIn = h("input", { type: row.secret ? "password" : "text", value: row.value,
+        placeholder: row.keep ? (row.unset ? "not set yet: enter the value" : "•••••••• (unchanged)") : "value",
+        autocomplete: "new-password", oninput: (e) => { row.value = e.target.value; row.keep = row.keep && e.target.value === ""; } });
+      const secretCb = h("input", { type: "checkbox", checked: row.secret, onchange: async (e) => {
+        if (!e.target.checked && row.keep) {
+          try { row.value = (await api("GET", `/api/reveal?kind=server&id=${encodeURIComponent(v.id)}&field=${encodeURIComponent(row.orig)}`)).value; row.keep = false; }
+          catch (x) { fail(x); e.target.checked = true; return; }
+        }
+        row.secret = e.target.checked; renderEnv();
+      } });
+      const reveal = row.keep ? h("button", { class: "btn sm", type: "button", onclick: async () => {
+        try { row.value = (await api("GET", `/api/reveal?kind=server&id=${encodeURIComponent(v.id)}&field=${encodeURIComponent(row.orig)}`)).value; row.keep = false; valIn.value = row.value; valIn.type = "text"; }
+        catch (x) { fail(x); } } }, "Show") : h("span");
+      return h("div", { class: "envrow" }, keyIn, valIn, check("secret", secretCb), reveal,
+        h("button", { class: "btn sm danger", type: "button", title: "Remove", onclick: () => { envRows.splice(i, 1); renderEnv(); } }, "✕"));
+    }), h("div", {}, h("button", { class: "btn sm", type: "button", onclick: () => { envRows.push({ key: "", orig: "", value: "", secret: false, keep: false }); renderEnv(); } }, "+ Variable")));
+  }
+
+  async function save() {
+    err.textContent = "";
+    const env = {}, secret_env = {};
+    for (const row of envRows) {
+      const k = row.key.trim();
+      if (!k) continue;
+      if (!row.secret) { env[k] = row.value; continue; }
+      if (row.keep && k !== row.orig) {
+        try { row.value = (await api("GET", `/api/reveal?kind=server&id=${encodeURIComponent(v.id)}&field=${encodeURIComponent(row.orig)}`)).value; row.keep = false; }
+        catch (e) { err.textContent = e.message; return; }
+      }
+      secret_env[k] = row.keep ? null : row.value;
+    }
+    const payload = {
+      original_id: s ? s.id : null, id: idIn.value.trim(), description: descIn.value, template: tplSel.value,
+      inventory_env: invIn.value.trim(), command: cmdIn.value, args: argsIn.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean), cwd: cwdIn.value,
+      env, secret_env, hosts: [...selectedHosts], clients: clientBoxes.filter((c) => c.el.checked).map((c) => c.k), enabled: enabledIn.checked,
+    };
+    try { await api("POST", "/api/servers", payload); closeDialog(); await reload(); toast(`Saved ${payload.id}. Apply to apps when you're done editing.`); }
+    catch (e) { err.textContent = e.message; }
+  }
+
+  openDialog(isNew ? "Add server" : `Edit ${s.id}`, [
+    h("div", { class: "row" }, field("Name", idIn, "Used in tool names: mcp__name__tool"), field("Template", tplSel)),
+    tplHint,
+    invField,
+    field("Description", descIn),
+    field("Command", cmdIn),
+    field("Arguments", argsIn),
+    field("Working directory", cwdIn),
+    field("Hosts", hostBox),
+    field("Environment variables", envBox, "Mark tokens and passwords as secret: they are stored encrypted and masked in logs."),
+    field("Install into", h("div", { class: "chips" }, clientBoxes.map((c) => check(c.label, c.el)))),
+    check("Enabled", enabledIn),
+    err,
+  ], [h("button", { class: "btn", onclick: closeDialog }, "Cancel"), h("button", { class: "btn primary", onclick: save }, "Save")], true);
+  renderHosts(); renderEnv();
+}
+
+// ---------------------------------------------------------------- hosts
+
+function viewHosts(view) {
+  view.append(h("div", { class: "section-head" },
+    h("div", {}, h("h2", {}, "Hosts & credentials"), h("p", { class: "muted small" }, "Machines your MCP servers connect to. Passwords are encrypted in the vault.")),
+    h("div", { class: "spacer" }),
+    h("button", { class: "btn primary", onclick: () => editHost(null) }, "+ Add host")));
+  if (!S.hosts.length) { view.append(h("div", { class: "empty" }, "No hosts yet.")); return; }
+  view.append(h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, ["", "Name", "Kind", "Address", "User", "Auth", "Used by", ""].map((x) => h("th", {}, x)))),
+    h("tbody", {}, S.hosts.map((x) => {
+      const st = S.status.hosts[x.id];
+      const auth = x.auth === "key" ? "key" : x.secrets_set.password ? "password" : "no password";
+      return [h("tr", {},
+        h("td", {}, h("span", { class: "dot " + (st ? (st.ok ? "ok" : "bad") : ""), title: st ? st.summary : "not tested" })),
+        h("td", {}, h("b", {}, x.name), x.readonly ? h("span", { class: "badge", style: "margin-left:6px" }, "read-only") : null),
+        h("td", {}, S.meta.kinds[x.kind] + (x.kind === "windows" ? ` · ${x.protocol.toUpperCase()}` : "")),
+        h("td", { class: "mono" }, `${x.address}:${x.port}`),
+        h("td", { class: "mono" }, x.username || "—"),
+        h("td", {}, h("span", { class: "tag " + (auth === "no password" ? "warn" : "keep") }, auth)),
+        h("td", { class: "mono small" }, x.used_by.join(", ") || h("span", { class: "muted" }, "—")),
+        h("td", {}, h("div", { class: "actions" },
+          h("button", { class: "btn sm", onclick: (e) => testHost(x, e.target) }, "Test"),
+          h("button", { class: "btn sm", onclick: () => editHost(x) }, "Edit"),
+          h("button", { class: "btn sm danger", onclick: () => deleteHost(x) }, "Delete")))),
+        st ? h("tr", {}, h("td", {}), h("td", { colspan: 7 }, h("div", { class: "status " + (st.ok ? "ok" : "bad") }, `${st.time} · ${st.summary}`))) : null];
+    })))));
+}
+
+async function testHost(x, btn) {
+  btn.disabled = true; btn.textContent = "Testing…";
+  try { const r = await api("POST", `/api/hosts/${x.id}/test`, {}); await reload(); toast(`${x.name}: ${r.summary}`, !r.ok); }
+  catch (e) { fail(e); btn.disabled = false; btn.textContent = "Test"; }
+}
+async function deleteHost(x) {
+  if (!confirm(`Delete host "${x.name}" and its credentials?`)) return;
+  try { await api("DELETE", `/api/hosts/${x.id}`); await reload(); toast("Host deleted"); } catch (e) { fail(e); }
+}
+
+function editHost(x) {
+  const v = x ? { ...x } : { name: "", kind: "linux", address: "", port: "", protocol: "ssh", use_ssl: false, username: "", auth: "password", key_path: "", readonly: false, description: "", secrets_set: {} };
+  const reveal = (f) => async () => (await api("GET", `/api/reveal?kind=host&id=${x.id}&field=${f}`)).value;
+  const nameIn = h("input", { type: "text", value: v.name, placeholder: "e.g. office-pc" });
+  const kindSel = h("select", {}, Object.entries(S.meta.kinds).map(([k, l]) => h("option", { value: k, selected: k === v.kind }, l)));
+  const addrIn = h("input", { type: "text", value: v.address, class: "mono", placeholder: "192.168.0.10 or host.example.com" });
+  const protoSel = h("select", {}, h("option", { value: "ssh", selected: v.protocol === "ssh" }, "SSH"), h("option", { value: "winrm", selected: v.protocol === "winrm" }, "WinRM"));
+  const portIn = h("input", { type: "number", value: x ? v.port : "", min: 1, max: 65535 });
+  const sslIn = h("input", { type: "checkbox", checked: v.use_ssl });
+  const userIn = h("input", { type: "text", value: v.username, class: "mono", autocomplete: "off" });
+  const authSel = h("select", {}, h("option", { value: "password", selected: v.auth === "password" }, "Password"), h("option", { value: "key", selected: v.auth === "key" }, "Private key file"));
+  const pw = secretInput(!!v.secrets_set.password, x ? reveal("password") : null);
+  const sudo = secretInput(!!v.secrets_set.sudo_password, x ? reveal("sudo_password") : null);
+  const keyIn = h("input", { type: "text", value: v.key_path, class: "mono", placeholder: "C:\\Users\\you\\.ssh\\id_ed25519" });
+  const roIn = h("input", { type: "checkbox", checked: v.readonly });
+  const descIn = h("input", { type: "text", value: v.description });
+  const err = h("div", { class: "error" });
+
+  const protoF = field("Protocol", protoSel), sslF = check("Use HTTPS (port 5986)", sslIn), authF = field("Authentication", authSel);
+  const pwF = field("Password", pw.el, x && v.secrets_set.password ? "Leave empty to keep the current password." : null);
+  const keyF = field("Private key path", keyIn), sudoF = field("sudo password", sudo.el, "Only if it differs from the login password.");
+  const roF = check("Read-only (the server refuses write operations, where supported)", roIn);
+  function sync() {
+    const win = kindSel.value === "windows", winrm = win && protoSel.value === "winrm";
+    protoF.style.display = win ? "" : "none";
+    sslF.style.display = winrm ? "" : "none";
+    authF.style.display = winrm ? "none" : "";
+    const key = !winrm && authSel.value === "key";
+    pwF.style.display = key ? "none" : ""; keyF.style.display = key ? "" : "none";
+    sudoF.style.display = kindSel.value === "linux" ? "" : "none";
+    roF.style.display = ["windows", "linux"].includes(kindSel.value) ? "" : "none";
+    portIn.placeholder = String(winrm ? (sslIn.checked ? 5986 : 5985) : 22);
+  }
+  [kindSel, protoSel, authSel, sslIn].forEach((el) => el.addEventListener("change", sync));
+
+  async function save() {
+    err.textContent = "";
+    const payload = { id: x ? x.id : null, name: nameIn.value, kind: kindSel.value, address: addrIn.value, port: portIn.value,
+      protocol: protoSel.value, use_ssl: sslIn.checked, username: userIn.value, auth: authSel.value, key_path: keyIn.value,
+      readonly: roIn.checked, description: descIn.value,
+      password: pw.input.value === "" && v.secrets_set.password ? null : pw.input.value,
+      sudo_password: sudo.input.value === "" && v.secrets_set.sudo_password ? null : sudo.input.value };
+    try { await api("POST", "/api/hosts", payload); closeDialog(); await reload(); toast(`Saved ${payload.name}`); }
+    catch (e) { err.textContent = e.message; }
+  }
+  openDialog(x ? `Edit ${x.name}` : "Add host", [
+    h("div", { class: "row" }, field("Name", nameIn), field("Kind", kindSel)),
+    h("div", { class: "row" }, field("Address", addrIn), protoF, h("div", { class: "field", style: "flex:0 0 110px" }, h("span", {}, "Port"), portIn)),
+    sslF,
+    h("div", { class: "row" }, field("Username", userIn), authF),
+    pwF, keyF, sudoF, roF,
+    field("Description", descIn),
+    x?.used_by?.length ? h("div", { class: "muted small" }, "Used by: ", x.used_by.join(", "), ". Running servers pick up changes when they restart.") : null,
+    err,
+  ], [h("button", { class: "btn", onclick: closeDialog }, "Cancel"), h("button", { class: "btn primary", onclick: save }, "Save")]);
+  sync();
+}
+
+// ---------------------------------------------------------------- apply to apps
+
+async function viewApps(view) {
+  view.append(h("div", { class: "section-head" },
+    h("div", {}, h("h2", {}, "Apply to apps"),
+      h("p", { class: "muted small" }, "Writes launcher entries into each app's MCP config. Other entries are left alone. The previous file is backed up, encrypted."))));
+  const box = h("div", { class: "grid" }, h("div", { class: "muted" }, "Loading…"));
+  const backups = h("div");
+  view.append(box, h("div", { style: "height:24px" }), backups);
+  let plan;
+  try { plan = (await api("GET", "/api/clients")).clients; } catch (e) { fail(e); return; }
+  const picks = {};
+  box.replaceChildren(...plan.map((c) => {
+    const pending = c.changes.filter((x) => x.action !== "keep");
+    picks[c.client] = h("input", { type: "checkbox", checked: pending.length > 0 });
+    return h("div", { class: "card client-card" },
+      h("div", { class: "card-head" }, check(h("b", {}, c.label), picks[c.client]), h("div", { class: "spacer" }),
+        pending.length ? h("span", { class: "tag update" }, `${pending.length} change${pending.length > 1 ? "s" : ""}`) : h("span", { class: "tag keep" }, "up to date")),
+      h("div", { class: "mono small muted", style: "overflow-wrap:anywhere" }, c.path, c.exists ? "" : " (will be created)"),
+      c.error ? h("div", { class: "status bad" }, c.error) : null,
+      h("div", {}, c.changes.length ? c.changes.map((x) => h("div", { class: "change" },
+        h("span", { class: "tag " + x.action }, x.action), h("span", { class: "mono" }, x.name), x.note ? h("span", { class: "muted small" }, "— " + x.note) : null))
+        : h("div", { class: "muted small" }, "No vault servers are assigned to this app.")),
+      c.unmanaged.length ? h("div", { class: "small muted" }, "Not managed by the vault (left untouched): ", h("span", { class: "mono" }, c.unmanaged.join(", "))) : null);
+  }));
+  const applyBtn = h("button", { class: "btn primary", onclick: async () => {
+    const ids = Object.entries(picks).filter(([, el]) => el.checked).map(([k]) => k);
+    if (!ids.length) { toast("Select at least one app"); return; }
+    applyBtn.disabled = true;
+    try {
+      const { results } = await api("POST", "/api/clients/apply", { clients: ids });
+      const bad = results.filter((r) => !r.ok);
+      bad.forEach((r) => toast(`${S.meta.clients[r.client].label}: ${r.error}`, true));
+      const good = results.filter((r) => r.ok);
+      if (good.length) openDialog("Applied", good.map((r) => h("div", { class: "status ok" }, h("b", {}, S.meta.clients[r.client].label), ": updated. ", r.reload)),
+        [h("button", { class: "btn primary", onclick: closeDialog }, "OK")]);
+      render();
+    } catch (e) { fail(e); applyBtn.disabled = false; }
+  } }, "Apply selected");
+  view.querySelector(".section-head").append(h("div", { class: "spacer" }), applyBtn);
+
+  try {
+    const { backups: list } = await api("GET", "/api/backups");
+    backups.append(h("h2", { style: "margin-bottom:10px" }, "Backups"),
+      list.length ? h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ["Time", "App", ""].map((x) => h("th", {}, x)))),
+        h("tbody", {}, list.slice(0, 20).map((b) => h("tr", {}, h("td", { class: "mono" }, b.time), h("td", {}, b.label),
+          h("td", {}, h("button", { class: "btn sm", onclick: async () => {
+            if (!confirm(`Restore ${b.label} config from ${b.time}? The current file is backed up first.`)) return;
+            try { const r = await api("POST", "/api/backups/restore", { name: b.name }); toast(`Restored. ${r.reload}`); render(); } catch (e) { fail(e); }
+          } }, "Restore")))))))
+        : h("div", { class: "muted small" }, "No backups yet. One is made every time a config file is changed."));
+  } catch (e) { fail(e); }
+}
+
+// ---------------------------------------------------------------- import
+
+async function viewImport(view) {
+  view.append(h("div", { class: "section-head" },
+    h("div", {}, h("h2", {}, "Import existing servers"),
+      h("p", { class: "muted small" }, "Reads the MCP entries already in your app configs (and the host files they point to) and moves their credentials into the vault."))));
+  const box = h("div", { class: "muted" }, "Scanning…");
+  view.append(box);
+  let res;
+  try { res = await api("GET", "/api/import"); } catch (e) { fail(e); return; }
+  const picks = {};
+  const cards = res.proposals.map((p) => {
+    const disabled = p.exists || !p.supported;
+    picks[p.id] = h("input", { type: "checkbox", checked: !disabled, disabled });
+    const secrets = Object.keys(p.secret_env);
+    return h("div", { class: "card" + (disabled ? " off" : "") },
+      h("div", { class: "card-head" }, check(h("b", { class: "mono" }, p.id), picks[p.id]), h("span", { class: "badge" }, S.meta.templates[p.template]?.label || p.template),
+        h("div", { class: "spacer" }), p.exists ? h("span", { class: "tag keep" }, "already in vault") : null),
+      h("div", { class: "small muted" }, "Found in: ", p.clients.map((c) => S.meta.clients[c]?.label || c).join(", ")),
+      h("div", { class: "mono small", style: "overflow-wrap:anywhere" }, [p.command, ...p.args].join(" ")),
+      p.hosts.length ? h("div", {}, p.hosts.map((x) => h("div", { class: "small" }, h("b", {}, x.name), h("span", { class: "mono muted" }, `  ${x.username}@${x.address}:${x.port || "default"}`),
+        x.has_password ? h("span", { class: "tag ok", style: "margin-left:6px" }, "password found") : x.auth === "key" ? h("span", { class: "tag keep", style: "margin-left:6px" }, "key") : null))) : null,
+      Object.keys(p.env).length ? h("div", { class: "small muted" }, "Env: ", h("span", { class: "mono" }, Object.keys(p.env).join(", "))) : null,
+      secrets.length ? h("div", { class: "small muted" }, "Secret env: ", h("span", { class: "mono" }, secrets.join(", "))) : null,
+      p.warnings.map((w) => h("div", { class: "status warn" }, w)));
+  });
+  box.className = "";
+  box.replaceChildren(
+    res.notes.length ? h("div", {}, res.notes.map((n) => h("div", { class: "status bad" }, n))) : "",
+    cards.length ? h("div", { class: "grid" }, cards) : h("div", { class: "empty" }, "No unmanaged MCP servers found in your app configs."));
+  if (cards.length) {
+    const btn = h("button", { class: "btn primary", onclick: async () => {
+      const ids = Object.entries(picks).filter(([, el]) => el.checked && !el.disabled).map(([k]) => k);
+      if (!ids.length) { toast("Nothing selected"); return; }
+      btn.disabled = true;
+      try {
+        const r = await api("POST", "/api/import", { ids });
+        await refresh();
+        toast(`Imported ${r.imported.length} server(s). Next: test them, then Apply to apps.`);
+        go("servers");
+      } catch (e) { fail(e); btn.disabled = false; }
+    } }, "Import selected");
+    view.querySelector(".section-head").append(h("div", { class: "spacer" }), btn);
+  }
+}
+
+// ---------------------------------------------------------------- settings
+
+function viewSettings(view) {
+  const lockIn = h("input", { type: "number", value: S.settings.auto_lock_minutes, min: 0, style: "max-width:140px" });
+  const autoIn = h("input", { type: "checkbox", checked: S.meta.autostart });
+  const oldPw = h("input", { type: "password", autocomplete: "current-password" });
+  const newPw = h("input", { type: "password", autocomplete: "new-password" });
+  const newPw2 = h("input", { type: "password", autocomplete: "new-password" });
+  const pwErr = h("div", { class: "error" });
+  view.append(h("div", { class: "section-head" }, h("h2", {}, "Settings")),
+    h("div", { class: "grid" },
+      h("div", { class: "card" }, h("b", {}, "Locking"),
+        field("Auto-lock after idle minutes", lockIn, "0 = stay unlocked until you lock it or log off. Running servers keep working when the vault locks; only new server starts need the password."),
+        h("div", {}, h("button", { class: "btn", onclick: async () => {
+          try { await api("POST", "/api/settings", { auto_lock_minutes: Number(lockIn.value) }); await reload(); toast("Saved"); } catch (e) { fail(e); } } }, "Save")),
+        h("hr", { style: "border:0;border-top:1px solid var(--border);width:100%" }),
+        check("Start the agent (locked) when I sign in to Windows", autoIn),
+        h("div", { class: "muted small" }, "Without it the agent starts on demand the first time an app launches a server.")),
+      h("div", { class: "card" }, h("b", {}, "Change master password"),
+        field("Current password", oldPw), field("New password", newPw), field("Repeat new password", newPw2), pwErr,
+        h("div", {}, h("button", { class: "btn", onclick: async () => {
+          pwErr.textContent = "";
+          if (newPw.value !== newPw2.value) { pwErr.textContent = "The new passwords do not match."; return; }
+          try { await api("POST", "/api/password", { old: oldPw.value, new: newPw.value }); oldPw.value = newPw.value = newPw2.value = ""; toast("Master password changed"); }
+          catch (e) { pwErr.textContent = e.message; } } }, "Change password"))),
+      h("div", { class: "card" }, h("b", {}, "Where things are"),
+        h("div", { class: "kv" },
+          h("div", {}, "Vault file"), h("div", { class: "mono small" }, S.meta.vault_file),
+          h("div", {}, "Server logs"), h("div", { class: "mono small" }, S.meta.log_dir),
+          h("div", {}, "Launcher"), h("div", { class: "mono small" }, `${S.meta.python} ${S.meta.entry} run <server>`),
+          h("div", {}, "Version"), h("div", {}, S.meta.version)),
+        h("div", { class: "muted small" }, "The vault is AES-256-GCM encrypted; the key is derived from your master password with scrypt. Back up the vault file; without the password it cannot be opened, and the password cannot be recovered."))));
+  autoIn.addEventListener("change", async () => {
+    try { const r = await api("POST", "/api/autostart", { enabled: autoIn.checked }); autoIn.checked = r.enabled; toast(r.enabled ? "Agent will start at sign-in" : "Autostart removed"); }
+    catch (e) { fail(e); autoIn.checked = !autoIn.checked; }
+  });
+}
+
+// ---------------------------------------------------------------- boot
+
+(async () => {
+  try {
+    const st = await api("GET", "/api/state");
+    if (!st.exists) return showLogin("create");
+    if (!st.unlocked) return showLogin("unlock");
+    await refresh(); showApp();
+  } catch (e) { if (!(e instanceof HttpError && e.status === 401)) showLogin("unlock"); }
+})();
+</script>
+</body>
+</html>

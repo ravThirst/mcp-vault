@@ -1,0 +1,17 @@
+{
+  "name": "local/example-mcp",
+  "description": "Administers example hosts over SSH.",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "local",
+      "identifier": "example-mcp",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "EXAMPLE_MCP_HOSTS", "description": "Inline JSON host inventory (filled by MCP Vault)", "isRequired": false, "isSecret": true },
+        { "name": "EXAMPLE_MCP_HOSTS_FILE", "description": "Path to a JSON host inventory", "isRequired": false, "isSecret": false },
+        { "name": "EXAMPLE_MCP_READONLY", "description": "true refuses every write tool", "isRequired": false, "isSecret": false }
+      ]
+    }
+  ]
+}
