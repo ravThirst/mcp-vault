@@ -61,7 +61,7 @@ $V = "$HOME\.mcp-servers\mcp-vault"; & "$V\.venv\Scripts\python.exe" "$V\vault.p
 | `templates` | Server templates and which host kinds they take |
 | `host add <name> --kind windows\|linux\|mikrotik\|other --address A [--port N] [--user U] [--protocol ssh\|winrm] [--auth password\|key] [--key-path P] [--readonly] [--description D]` | New host; password is then entered in the UI |
 | `host edit <name> [same options] [--rename NEW]` | Change only the given fields |
-| `host remove <name> --yes` | Delete host and its credentials (refused while a server uses it) |
+| `host remove <name> [--yes]` | Without `--yes`: shows the effect. With it: deletes the host and its credentials, unlinks it from servers that keep other hosts, and deletes servers left with none (then `apply`) |
 | `server add <id> --command EXE [--arg A]... [--template T] [--host NAME]... [--inventory-env VAR] [--env K=V]... [--secret K]... [--app claude-code\|claude-desktop]... [--cwd D] [--description D]` | New server. `--secret K` declares a secret variable; its value goes in the UI |
 | `server edit <id> [--add-host H] [--remove-host H] [--host H]... [--env K=V] [--unset-env K] [--secret K] [--drop-secret K] [--enable\|--disable] [--rename NEW] ...` | Change only the given fields (`--arg`/`--host`/`--app` replace the whole list) |
 | `server remove <id> --yes` | Delete server entry and its secrets |

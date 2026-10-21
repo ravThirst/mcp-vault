@@ -132,13 +132,15 @@ def cmd_host(args) -> int:
     snap = _snapshot(c)
     if args.action == "remove":
         h = _find_host(snap, args.name)
-        if h["used_by"]:
-            raise CliError(f"Host {h['name']!r} is used by {', '.join(h['used_by'])}; "
-                           "remove it from those servers first (server edit <id> --remove-host).")
+        impact = model.host_removal_impact(snap["servers"], h["id"])
+        effect = f"; {model.describe_impact(impact)}" if impact else ""
         if not args.yes:
-            raise CliError(f"Removing host {h['name']!r} deletes its stored credentials. Re-run with --yes to confirm.", 2)
-        _call(c, "DELETE", f"/internal/manage/hosts/{h['id']}")
-        print(f"Removed host {h['name']}.")
+            raise CliError(f"Removing host {h['name']!r} deletes its stored credentials{effect}. "
+                           "Re-run with --yes to confirm.", 2)
+        r = _call(c, "DELETE", f"/internal/manage/hosts/{h['id']}", {"cascade": True})
+        print(f"Removed host {h['name']}{effect}.")
+        if r.get("deleted_servers"):
+            print("Run `vault.py apply` so the apps stop listing the deleted server(s).")
         return 0
 
     if args.action == "add":

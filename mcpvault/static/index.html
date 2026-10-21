@@ -510,8 +510,39 @@ async function testHost(x, btn) {
   catch (e) { fail(e); btn.disabled = false; btn.textContent = "Test"; }
 }
 async function deleteHost(x) {
-  if (!confirm(`Delete host "${x.name}" and its credentials?`)) return;
-  try { await api("DELETE", `/api/hosts/${x.id}`); await reload(); toast("Host deleted"); } catch (e) { fail(e); }
+  if (!x.used_by.length) {
+    if (!confirm(`Delete host "${x.name}" and its credentials?`)) return;
+    try { await api("DELETE", `/api/hosts/${x.id}`, {}); await reload(); toast("Host deleted"); } catch (e) { fail(e); }
+    return;
+  }
+  // In use: the agent reports what deleting it would do to each server.
+  let impact;
+  try { await api("DELETE", `/api/hosts/${x.id}`, {}); await reload(); toast("Host deleted"); return; }
+  catch (e) { if (!(e instanceof HttpError && e.status === 409 && e.body.impact)) { fail(e); return; } impact = e.body.impact; }
+  const doIt = async (btn) => {
+    btn.disabled = true;
+    try {
+      const r = await api("DELETE", `/api/hosts/${x.id}`, { cascade: true });
+      closeDialog(); await reload();
+      if (r.deleted_servers.length) {
+        openDialog("Host deleted", [
+          h("div", { class: "status ok" }, `Deleted host ${x.name} and server${r.deleted_servers.length > 1 ? "s" : ""} ${r.deleted_servers.join(", ")}.`),
+          h("div", {}, "Your apps still list the deleted server until you apply the change."),
+        ], [h("button", { class: "btn", onclick: closeDialog }, "Later"),
+            h("button", { class: "btn primary", onclick: () => { closeDialog(); go("apps"); } }, "Apply to apps")]);
+      } else toast(`Deleted ${x.name}; removed from ${r.detached_from.join(", ")}`);
+    } catch (e) { fail(e); btn.disabled = false; }
+  };
+  const del = h("button", { class: "btn primary", style: "background:var(--bad);border-color:var(--bad);color:#fff" }, "Delete");
+  del.addEventListener("click", () => doIt(del));
+  openDialog(`Delete host ${x.name}?`, [
+    h("div", {}, "Its stored credentials are deleted. The servers using it change like this:"),
+    h("div", {}, impact.map((i) => h("div", { class: "change", style: "display:flex;gap:8px;align-items:center;padding:3px 0" },
+      h("span", { class: "tag " + (i.action === "delete" ? "remove" : "update") }, i.action === "delete" ? "delete server" : "unlink"),
+      h("span", { class: "mono" }, i.server),
+      h("span", { class: "muted small" }, i.action === "delete" ? "has no other host, so it can't run without this one"
+        : `keeps ${i.remaining} other host${i.remaining === 1 ? "" : "s"}`)))),
+  ], [h("button", { class: "btn", onclick: closeDialog }, "Cancel"), del]);
 }
 
 function editHost(x) {

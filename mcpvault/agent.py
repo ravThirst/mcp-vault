@@ -244,16 +244,29 @@ class Agent:
             self.host_status.pop(host["id"], None)
         return {"ok": True, "id": host["id"]}
 
-    def api_delete_host(self, _body, _q, hid) -> dict:
+    def api_delete_host(self, body, _q, hid) -> dict:
+        """Delete a host. If servers use it, `cascade` unlinks it from them and deletes
+        the ones that cannot run without it; without `cascade` the impact is returned
+        (409) so the caller can show it and confirm."""
         with self.lock:
             d = self.data()
             host = self.find_host(hid)
-            used = [s["id"] for s in d["servers"] if hid in s["hosts"]]
-            if used:
-                raise ApiError(409, f"Used by {', '.join(used)}; remove it from those servers first")
+            impact = model.host_removal_impact(d["servers"], hid)
+            if impact and not body.get("cascade"):
+                raise ApiError(409, f"Host {host['name']!r} is in use: {model.describe_impact(impact)}", impact=impact)
+            for item in impact:
+                server = self.find_server(item["server"])
+                if item["action"] == "delete":
+                    d["servers"].remove(server)
+                    self.server_status.pop(server["id"], None)
+                else:
+                    server["hosts"] = [h for h in server["hosts"] if h != hid]
             d["hosts"].remove(host)
+            self.host_status.pop(hid, None)
             self.vault.save()
-        return {"ok": True}
+        deleted = [i["server"] for i in impact if i["action"] == "delete"]
+        return {"ok": True, "deleted_servers": deleted,
+                "detached_from": [i["server"] for i in impact if i["action"] == "detach"]}
 
     def api_save_server(self, body, _q) -> dict:
         with self.lock:

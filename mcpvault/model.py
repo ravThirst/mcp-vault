@@ -174,6 +174,33 @@ def clean_server(p: dict, existing: dict | None, hosts_by_id: dict) -> dict:
     }
 
 
+def host_removal_impact(servers: list[dict], host_id: str) -> list[dict]:
+    """What deleting a host does to the servers that use it.
+
+    A server keeps working without the host if it still has as many hosts as its
+    template needs ("detach"); otherwise it cannot run any more and is deleted
+    with the host ("delete"), e.g. a windows-mcp server and its only host.
+    """
+    impact = []
+    for s in servers:
+        if host_id not in s.get("hosts", []):
+            continue
+        remaining = len(s["hosts"]) - 1
+        needed = adapters.TEMPLATES[s["template"]]["min_hosts"]
+        impact.append({"server": s["id"], "action": "delete" if remaining < needed else "detach", "remaining": remaining})
+    return impact
+
+
+def describe_impact(impact: list[dict]) -> str:
+    parts = []
+    for item in impact:
+        if item["action"] == "delete":
+            parts.append(f"server {item['server']} is deleted too (it has no other host)")
+        else:
+            parts.append(f"it is removed from server {item['server']} ({item['remaining']} host(s) left)")
+    return "; ".join(parts)
+
+
 def mask_host(h: dict) -> dict:
     out = copy.deepcopy(h)
     out["secrets_set"] = {f: bool(h.get(f)) for f in HOST_SECRETS}
