@@ -1,6 +1,7 @@
 # cmd.exe misreads labels and goto in .bat files with LF line endings,
 # so keep them CRLF no matter how the repo is checked out or downloaded.
 *.bat text eol=crlf
+*.ps1 text eol=crlf
 *.py text eol=lf
 *.md text eol=lf
 *.html text eol=lf

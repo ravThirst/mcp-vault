@@ -26,7 +26,19 @@ Claude Code and/or Claude Desktop.
 
 ## Install and start
 
-Get the code: **Code → Download ZIP** on GitHub and extract it anywhere, or
+**One line** (PowerShell, no admin needed). Run the same line again to update:
+
+```powershell
+irm https://raw.githubusercontent.com/ravThirst/mcp-vault/main/install.ps1 | iex
+```
+
+It downloads the code into `~\.mcp-servers\mcp-vault` (set `$env:MCPVAULT_DIR`
+first for another folder, `$env:MCPVAULT_REF = 'v0.2.0'` for a specific
+version), then runs the setup below. Updates replace only the app code; `.venv`
+and your vault are kept. As with any `irm | iex`, you can read
+[install.ps1](install.ps1) first.
+
+**Or manually:** **Code → Download ZIP** on GitHub and extract it anywhere, or
 `git clone`. Then double-click **`MCP Vault.bat`**, or use the Start-menu
 shortcut it offers to create (the shortcut runs the same file). The first run,
 or `"MCP Vault.bat" setup`:
