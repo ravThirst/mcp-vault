@@ -139,6 +139,11 @@ def resolve(server: dict, hosts_by_id: dict) -> tuple[dict, list[str]]:
         hosts.append(h)
     if len(hosts) < template["min_hosts"]:
         raise ResolveError(f"server {server['id']!r} needs at least {template['min_hosts']} host(s)")
+    disabled = [h["name"] for h in hosts if not h.get("enabled", True)]
+    hosts = [h for h in hosts if h.get("enabled", True)]
+    if len(hosts) < template["min_hosts"]:
+        raise ResolveError(f"server {server['id']!r} cannot start: its host(s) {', '.join(disabled)} "
+                           "are disabled in MCP Vault. Enable a host to use it again.")
 
     env: dict[str, str] = {}
     builder = _BUILDERS.get(server["template"])

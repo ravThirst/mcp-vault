@@ -86,6 +86,8 @@ def clean_host(p: dict, existing: dict | None) -> dict:
         "key_path": key_path,
         "readonly": bool(p.get("readonly")),
         "description": _text(p, "description"),
+        # Disabled hosts stay in the vault (credentials kept) but are not given to servers.
+        "enabled": bool(p["enabled"]) if p.get("enabled") is not None else (existing or {}).get("enabled", True),
     }
     for field in HOST_SECRETS:
         value = p.get(field)

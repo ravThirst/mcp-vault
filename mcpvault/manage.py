@@ -84,7 +84,8 @@ def cmd_list(args) -> int:
         kind = h["kind"] + (f"/{h['protocol']}" if h["kind"] == "windows" else "")
         auth = "key" if h["auth"] == "key" else ("password set" if h["secrets_set"]["password"] else "NO PASSWORD")
         st = snap["status"]["hosts"].get(h["id"])
-        lines.append(f"  {h['name']:<16} {kind:<13} {h['username']}@{h['address']}:{h['port']}  {auth}"
+        state = "" if h.get("enabled", True) else "DISABLED  "
+        lines.append(f"  {h['name']:<16} {kind:<13} {state}{h['username']}@{h['address']}:{h['port']}  {auth}"
                      f"  used by: {', '.join(h['used_by']) or '-'}" + (f"  [{st['summary']}]" if st else ""))
     _out(args, {"servers": snap["servers"], "hosts": snap["hosts"], "running": snap["running"],
                 "status": snap["status"]}, "\n".join(lines))
@@ -162,10 +163,13 @@ def cmd_host(args) -> int:
         payload["use_ssl"] = args.ssl
     if args.readonly is not None:
         payload["readonly"] = args.readonly
+    if args.enabled is not None:
+        payload["enabled"] = args.enabled
 
     result = _call(c, "POST", "/internal/manage/hosts", payload)
     saved = _find_host(_snapshot(c), result["id"])
-    print(f"Saved host {saved['name']}: {saved['kind']} {saved['username']}@{saved['address']}:{saved['port']} ({saved['auth']}).")
+    print(f"Saved host {saved['name']}: {saved['kind']} {saved['username']}@{saved['address']}:{saved['port']} ({saved['auth']})"
+          + ("." if saved.get("enabled", True) else ", DISABLED (servers do not receive it)."))
     if saved["auth"] == "password" and not saved["secrets_set"]["password"]:
         print(f"Next: enter its password in MCP Vault -> Hosts -> {saved['name']} -> Edit.")
     if saved["used_by"]:
@@ -366,6 +370,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--auth", choices=["password", "key"])
     p.add_argument("--key-path", dest="key_path")
     _bool_pair(p, "readonly", "readonly", "server refuses writes on this host", "allow writes")
+    _bool_pair(p, "enable", "enabled", "give this host to its servers again",
+               "keep the host and its credentials, but stop giving it to servers", off_name="disable")
     p.add_argument("--description")
     p.add_argument("--rename")
     p.add_argument("--yes", action="store_true", help="confirm remove")

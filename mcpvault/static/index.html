@@ -115,6 +115,17 @@ pre.log { background: var(--bg); border: 1px solid var(--border); border-radius:
 .toast { background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 9px; box-shadow: 0 6px 18px rgba(0,0,0,.2); font-size: 13.5px; max-width: 420px; }
 .toast.bad { background: var(--bad); color: #fff; }
 
+/* Disabled hosts: kept in the vault, not given to servers. */
+.is-disabled { opacity: .45; }
+/* Fade the cells, not the row, so the action buttons stay fully visible. */
+tr.row-disabled > td:not(:last-child) { opacity: .45; }
+td { white-space: nowrap; }
+td.wrap { white-space: normal; }
+.chip.is-disabled { text-decoration: line-through; }
+.host-item { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.host-item > .check { flex: 1 1 220px; min-width: 0; }
+.host-item .btn { flex: none; }
+
 .client-card .change { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; }
 .kv div:nth-child(odd) { color: var(--muted); }
@@ -154,6 +165,7 @@ pre.log { background: var(--bg); border: 1px solid var(--border); border-radius:
 </div>
 
 <dialog id="dlg"></dialog>
+<dialog id="dlg2"></dialog>
 <div class="toasts" id="toasts"></div>
 
 <script>
@@ -204,7 +216,7 @@ function showLogin(mode) {
   loginMode = mode;
   $("#app").classList.add("hidden");
   $("#login").classList.remove("hidden");
-  closeDialog();
+  closeDialog(2); closeDialog(1);
   $("#pw2-wrap").classList.toggle("hidden", mode !== "create");
   $("#login-text").textContent = mode === "create"
     ? "Create your vault. All hosts, passwords and MCP server settings are encrypted with this password. It cannot be recovered if you forget it."
@@ -251,13 +263,17 @@ async function reload() { try { await refresh(); render(); } catch (e) { fail(e)
 
 // ---------------------------------------------------------------- dialogs
 
-function closeDialog() { const d = $("#dlg"); if (d.open) d.close(); d.replaceChildren(); }
-function openDialog(title, body, buttons = [], wide = false) {
-  const d = $("#dlg");
+// Two dialog layers: layer 2 opens on top of layer 1 (e.g. editing a host from
+// inside the server editor) without discarding what is open underneath.
+// Anything other than 2 (including a click event passed by onclick) means layer 1.
+const dialogEl = (layer) => $(layer === 2 ? "#dlg2" : "#dlg");
+function closeDialog(layer) { const d = dialogEl(layer); if (d.open) d.close(); d.replaceChildren(); }
+function openDialog(title, body, buttons = [], wide = false, layer = 1) {
+  const d = dialogEl(layer);
   d.style.width = wide ? "min(860px, calc(100vw - 32px))" : "";
   d.replaceChildren(
     h("div", { class: "dlg-head" }, h("h3", {}, title), h("div", { class: "spacer" }),
-      h("button", { class: "btn sm", onclick: closeDialog, "aria-label": "Close" }, "✕")),
+      h("button", { class: "btn sm", onclick: () => closeDialog(layer), "aria-label": "Close" }, "✕")),
     h("div", { class: "dlg-body" }, body),
     buttons.length ? h("div", { class: "dlg-foot" }, buttons) : null);
   d.showModal();
@@ -309,8 +325,12 @@ function viewServers(view) {
       s.description ? h("div", { class: "muted small" }, s.description) : null,
       s.hosts.length ? h("div", { class: "chips" }, s.hosts.map((hid) => {
         const x = hosts[hid];
-        return h("span", { class: "chip", title: x ? `${x.username}@${x.address}:${x.port}` : "" }, x ? x.name : "missing host");
+        const off = x && x.enabled === false;
+        return h("span", { class: "chip" + (off ? " is-disabled" : ""),
+          title: x ? `${x.username}@${x.address}:${x.port}${off ? " (disabled)" : ""}` : "" }, x ? x.name : "missing host");
       })) : null,
+      tpl && tpl.min_hosts > 0 && s.hosts.filter((hid) => hosts[hid] && hosts[hid].enabled !== false).length < tpl.min_hosts
+        ? h("div", { class: "status warn" }, "Its hosts are disabled, so it won't start. Enable a host to use it again.") : null,
       h("div", { class: "small muted" },
         "Apps: ", s.clients.length ? s.clients.map((c) => S.meta.clients[c]?.label || c).join(", ") : "none",
         running ? ` · ${running} running` : ""),
@@ -396,17 +416,40 @@ function editServer(s) {
   const err = h("div", { class: "error" });
   let selectedHosts = new Set(v.hosts);
 
+  // Host actions open on dialog layer 2, so this editor (and its unsaved changes) stays open.
+  function afterHostChange() {
+    if (s && !S.servers.some((z) => z.id === s.id)) {
+      closeDialog(1);
+      toast(`Server ${s.id} was deleted together with its only host`);
+      return;
+    }
+    selectedHosts = new Set([...selectedHosts].filter((id) => S.hosts.some((x) => x.id === id)));
+    renderHosts();
+  }
+
   function renderHosts() {
     const t = S.meta.templates[tplSel.value];
     tplHint.textContent = t.description;
     invField.style.display = (t.options || []).includes("inventory_env") ? "" : "none";
     hostBox.parentElement && (hostBox.parentElement.style.display = t.max_hosts === 0 ? "none" : "");
     const ok = S.hosts.filter((x) => t.kinds.includes(x.kind));
-    hostBox.replaceChildren(...(ok.length ? ok.map((x) => {
+    const rows = ok.map((x) => {
+      const off = x.enabled === false;
       const cb = h("input", { type: t.max_hosts === 1 ? "radio" : "checkbox", name: "srv-host", checked: selectedHosts.has(x.id),
         onchange: () => { if (t.max_hosts === 1) selectedHosts = new Set([x.id]); else cb.checked ? selectedHosts.add(x.id) : selectedHosts.delete(x.id); } });
-      return check(h("span", {}, h("b", {}, x.name), h("span", { class: "muted mono small" }, `  ${x.username}@${x.address}:${x.port}`)), cb);
-    }) : [h("div", { class: "muted small" }, `No ${t.kinds.map((k) => S.meta.kinds[k]).join("/")} hosts yet. Add them on the Hosts tab.`)]));
+      const label = h("span", { class: off ? "is-disabled" : "" }, h("b", {}, x.name),
+        h("span", { class: "muted mono small" }, `  ${x.username}@${x.address}:${x.port}`),
+        off ? h("span", { class: "badge", style: "margin-left:6px" }, "disabled") : null);
+      return h("div", { class: "host-item" }, check(label, cb),
+        h("button", { class: "btn sm", type: "button", title: off ? "Give this host to its servers again" : "Keep the host, but stop giving it to servers",
+          onclick: () => setHostEnabled(x, off, afterHostChange) }, off ? "Enable" : "Disable"),
+        h("button", { class: "btn sm", type: "button", onclick: () => editHost(x, { layer: 2, onSaved: afterHostChange }) }, "Edit"),
+        h("button", { class: "btn sm danger", type: "button", onclick: () => deleteHost(x, { layer: 2, onDone: afterHostChange }) }, "Delete"));
+    });
+    const add = h("div", {}, h("button", { class: "btn sm", type: "button", onclick: () => editHost(null, { layer: 2, kind: t.kinds[0],
+      onSaved: (id) => { if (t.max_hosts === 1) selectedHosts = new Set([id]); else selectedHosts.add(id); afterHostChange(); } }) }, "+ New host"));
+    hostBox.replaceChildren(...(rows.length ? rows
+      : [h("div", { class: "muted small" }, `No ${t.kinds.map((k) => S.meta.kinds[k]).join("/")} hosts yet.`)]), add);
   }
   tplSel.addEventListener("change", () => {
     selectedHosts = new Set([...selectedHosts].filter((id) => S.meta.templates[tplSel.value].kinds.includes(S.hosts.find((x) => x.id === id)?.kind)));
@@ -488,16 +531,20 @@ function viewHosts(view) {
     h("tbody", {}, S.hosts.map((x) => {
       const st = S.status.hosts[x.id];
       const auth = x.auth === "key" ? "key" : x.secrets_set.password ? "password" : "no password";
-      return [h("tr", {},
+      const off = x.enabled === false;
+      return [h("tr", { class: off ? "row-disabled" : "" },
         h("td", {}, h("span", { class: "dot " + (st ? (st.ok ? "ok" : "bad") : ""), title: st ? st.summary : "not tested" })),
-        h("td", {}, h("b", {}, x.name), x.readonly ? h("span", { class: "badge", style: "margin-left:6px" }, "read-only") : null),
+        h("td", {}, h("b", {}, x.name), off ? h("span", { class: "badge", style: "margin-left:6px" }, "disabled") : null,
+          x.readonly ? h("span", { class: "badge", style: "margin-left:6px" }, "read-only") : null),
         h("td", {}, S.meta.kinds[x.kind] + (x.kind === "windows" ? ` · ${x.protocol.toUpperCase()}` : "")),
         h("td", { class: "mono" }, `${x.address}:${x.port}`),
         h("td", { class: "mono" }, x.username || "—"),
         h("td", {}, h("span", { class: "tag " + (auth === "no password" ? "warn" : "keep") }, auth)),
-        h("td", { class: "mono small" }, x.used_by.join(", ") || h("span", { class: "muted" }, "—")),
+        h("td", { class: "mono small wrap" }, x.used_by.join(", ") || h("span", { class: "muted" }, "—")),
         h("td", {}, h("div", { class: "actions" },
           h("button", { class: "btn sm", onclick: (e) => testHost(x, e.target) }, "Test"),
+          h("button", { class: "btn sm", title: off ? "Give this host to its servers again" : "Keep the host, but stop giving it to servers",
+            onclick: () => setHostEnabled(x, off) }, off ? "Enable" : "Disable"),
           h("button", { class: "btn sm", onclick: () => editHost(x) }, "Edit"),
           h("button", { class: "btn sm danger", onclick: () => deleteHost(x) }, "Delete")))),
         st ? h("tr", {}, h("td", {}), h("td", { colspan: 7 }, h("div", { class: "status " + (st.ok ? "ok" : "bad") }, `${st.time} · ${st.summary}`))) : null];
@@ -509,27 +556,49 @@ async function testHost(x, btn) {
   try { const r = await api("POST", `/api/hosts/${x.id}/test`, {}); await reload(); toast(`${x.name}: ${r.summary}`, !r.ok); }
   catch (e) { fail(e); btn.disabled = false; btn.textContent = "Test"; }
 }
-async function deleteHost(x) {
+// A host as the API expects it back: secrets null = keep the stored values.
+function hostPayload(x) {
+  const p = { ...x, password: null, sudo_password: null };
+  delete p.secrets_set; delete p.used_by;
+  return p;
+}
+
+async function setHostEnabled(x, enabled, after) {
+  try {
+    await api("POST", "/api/hosts", { ...hostPayload(x), enabled });
+    await reload();
+    toast(enabled ? `${x.name} enabled` : `${x.name} disabled: its servers stop receiving it the next time they start`);
+    if (after) after();
+  } catch (e) { fail(e); }
+}
+
+// opts.layer: dialog layer to use (2 from inside the server editor); opts.onDone: called after a delete.
+async function deleteHost(x, opts = {}) {
+  const layer = opts.layer || 1;
+  const done = (r) => { if (opts.onDone) opts.onDone(r); };
   if (!x.used_by.length) {
     if (!confirm(`Delete host "${x.name}" and its credentials?`)) return;
-    try { await api("DELETE", `/api/hosts/${x.id}`, {}); await reload(); toast("Host deleted"); } catch (e) { fail(e); }
+    try { const r = await api("DELETE", `/api/hosts/${x.id}`, {}); await reload(); toast("Host deleted"); done(r); } catch (e) { fail(e); }
     return;
   }
   // In use: the agent reports what deleting it would do to each server.
   let impact;
-  try { await api("DELETE", `/api/hosts/${x.id}`, {}); await reload(); toast("Host deleted"); return; }
+  try { const r = await api("DELETE", `/api/hosts/${x.id}`, {}); await reload(); toast("Host deleted"); done(r); return; }
   catch (e) { if (!(e instanceof HttpError && e.status === 409 && e.body.impact)) { fail(e); return; } impact = e.body.impact; }
   const doIt = async (btn) => {
     btn.disabled = true;
     try {
       const r = await api("DELETE", `/api/hosts/${x.id}`, { cascade: true });
-      closeDialog(); await reload();
+      closeDialog(layer); await reload(); done(r);
       if (r.deleted_servers.length) {
+        // From the server editor the deleted server is usually the one being edited; it closes in onDone.
+        const editorOpen = dialogEl(1).open && layer === 2;
         openDialog("Host deleted", [
           h("div", { class: "status ok" }, `Deleted host ${x.name} and server${r.deleted_servers.length > 1 ? "s" : ""} ${r.deleted_servers.join(", ")}.`),
           h("div", {}, "Your apps still list the deleted server until you apply the change."),
-        ], [h("button", { class: "btn", onclick: closeDialog }, "Later"),
-            h("button", { class: "btn primary", onclick: () => { closeDialog(); go("apps"); } }, "Apply to apps")]);
+        ], [h("button", { class: "btn", onclick: () => closeDialog(editorOpen ? 2 : 1) }, "Later"),
+            editorOpen ? null : h("button", { class: "btn primary", onclick: () => { closeDialog(1); go("apps"); } }, "Apply to apps")],
+        false, editorOpen ? 2 : 1);
       } else toast(`Deleted ${x.name}; removed from ${r.detached_from.join(", ")}`);
     } catch (e) { fail(e); btn.disabled = false; }
   };
@@ -542,11 +611,15 @@ async function deleteHost(x) {
       h("span", { class: "mono" }, i.server),
       h("span", { class: "muted small" }, i.action === "delete" ? "has no other host, so it can't run without this one"
         : `keeps ${i.remaining} other host${i.remaining === 1 ? "" : "s"}`)))),
-  ], [h("button", { class: "btn", onclick: closeDialog }, "Cancel"), del]);
+    h("div", { class: "muted small" }, "To keep the host and only stop using it, choose Disable instead."),
+  ], [h("button", { class: "btn", onclick: () => closeDialog(layer) }, "Cancel"), del], false, layer);
 }
 
-function editHost(x) {
-  const v = x ? { ...x } : { name: "", kind: "linux", address: "", port: "", protocol: "ssh", use_ssl: false, username: "", auth: "password", key_path: "", readonly: false, description: "", secrets_set: {} };
+// opts.layer: dialog layer (2 from inside the server editor); opts.kind: preset kind for a new host;
+// opts.onSaved(id): called after saving.
+function editHost(x, opts = {}) {
+  const layer = opts.layer || 1;
+  const v = x ? { ...x } : { name: "", kind: opts.kind || "linux", address: "", port: "", protocol: "ssh", use_ssl: false, username: "", auth: "password", key_path: "", readonly: false, description: "", enabled: true, secrets_set: {} };
   const reveal = (f) => async () => (await api("GET", `/api/reveal?kind=host&id=${x.id}&field=${f}`)).value;
   const nameIn = h("input", { type: "text", value: v.name, placeholder: "e.g. office-pc" });
   const kindSel = h("select", {}, Object.entries(S.meta.kinds).map(([k, l]) => h("option", { value: k, selected: k === v.kind }, l)));
@@ -560,6 +633,7 @@ function editHost(x) {
   const sudo = secretInput(!!v.secrets_set.sudo_password, x ? reveal("sudo_password") : null);
   const keyIn = h("input", { type: "text", value: v.key_path, class: "mono", placeholder: "C:\\Users\\you\\.ssh\\id_ed25519" });
   const roIn = h("input", { type: "checkbox", checked: v.readonly });
+  const enIn = h("input", { type: "checkbox", checked: v.enabled !== false });
   const descIn = h("input", { type: "text", value: v.description });
   const err = h("div", { class: "error" });
 
@@ -584,11 +658,14 @@ function editHost(x) {
     err.textContent = "";
     const payload = { id: x ? x.id : null, name: nameIn.value, kind: kindSel.value, address: addrIn.value, port: portIn.value,
       protocol: protoSel.value, use_ssl: sslIn.checked, username: userIn.value, auth: authSel.value, key_path: keyIn.value,
-      readonly: roIn.checked, description: descIn.value,
+      readonly: roIn.checked, description: descIn.value, enabled: enIn.checked,
       password: pw.input.value === "" && v.secrets_set.password ? null : pw.input.value,
       sudo_password: sudo.input.value === "" && v.secrets_set.sudo_password ? null : sudo.input.value };
-    try { await api("POST", "/api/hosts", payload); closeDialog(); await reload(); toast(`Saved ${payload.name}`); }
-    catch (e) { err.textContent = e.message; }
+    try {
+      const r = await api("POST", "/api/hosts", payload);
+      closeDialog(layer); await reload(); toast(`Saved ${payload.name}`);
+      if (opts.onSaved) opts.onSaved(r.id);
+    } catch (e) { err.textContent = e.message; }
   }
   openDialog(x ? `Edit ${x.name}` : "Add host", [
     h("div", { class: "row" }, field("Name", nameIn), field("Kind", kindSel)),
@@ -596,10 +673,11 @@ function editHost(x) {
     sslF,
     h("div", { class: "row" }, field("Username", userIn), authF),
     pwF, keyF, sudoF, roF,
+    check("Enabled (servers receive this host; disable to keep it without using it)", enIn),
     field("Description", descIn),
     x?.used_by?.length ? h("div", { class: "muted small" }, "Used by: ", x.used_by.join(", "), ". Running servers pick up changes when they restart.") : null,
     err,
-  ], [h("button", { class: "btn", onclick: closeDialog }, "Cancel"), h("button", { class: "btn primary", onclick: save }, "Save")]);
+  ], [h("button", { class: "btn", onclick: () => closeDialog(layer) }, "Cancel"), h("button", { class: "btn primary", onclick: save }, "Save")], false, layer);
   sync();
 }
 

@@ -60,7 +60,7 @@ $V = "$HOME\.mcp-servers\mcp-vault"; & "$V\.venv\Scripts\python.exe" "$V\vault.p
 | `show server <id>` / `show host <name>` | One entry as JSON (secret values appear only as set/unset flags) |
 | `templates` | Server templates and which host kinds they take |
 | `host add <name> --kind windows\|linux\|mikrotik\|other --address A [--port N] [--user U] [--protocol ssh\|winrm] [--auth password\|key] [--key-path P] [--readonly] [--description D]` | New host; password is then entered in the UI |
-| `host edit <name> [same options] [--rename NEW]` | Change only the given fields |
+| `host edit <name> [same options] [--rename NEW] [--enable\|--disable]` | Change only the given fields. A disabled host keeps its credentials but is not given to servers; a server whose hosts are all disabled won't start |
 | `host remove <name> [--yes]` | Without `--yes`: shows the effect. With it: deletes the host and its credentials, unlinks it from servers that keep other hosts, and deletes servers left with none (then `apply`) |
 | `server add <id> --command EXE [--arg A]... [--template T] [--host NAME]... [--inventory-env VAR] [--env K=V]... [--secret K]... [--app claude-code\|claude-desktop]... [--cwd D] [--description D]` | New server. `--secret K` declares a secret variable; its value goes in the UI |
 | `server edit <id> [--add-host H] [--remove-host H] [--host H]... [--env K=V] [--unset-env K] [--secret K] [--drop-secret K] [--enable\|--disable] [--rename NEW] ...` | Change only the given fields (`--arg`/`--host`/`--app` replace the whole list) |
@@ -127,7 +127,8 @@ Work from the outside in: agent → server process → remote host.
      config: `apply --dry-run`, then reconnect.
 4. **Errors from inside a working server** ("WINDOWS_HOST is not set", "no hosts configured",
    "unknown host") mean the server got the wrong or empty settings: `show server <id>`
-   to check template and hosts; empty secrets show as `false`.
+   to check template and hosts; empty secrets show as `false`. "cannot start: its host(s) …
+   are disabled" means the user disabled them on purpose; ask before `host edit <name> --enable`.
 5. **`test host <name>`** for remote failures: "Port … unreachable" means the
    machine is off, on another network or firewalled (nothing the vault can fix);
    "authentication failed" means wrong username/password/key, fixed in the UI.
