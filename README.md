@@ -47,7 +47,7 @@ or `"MCP Vault.bat" setup`:
   Python 3.12 with winget if there is none;
 * creates `.venv` in the app folder and installs `requirements.txt`;
 * rebuilds `.venv` if it is broken (e.g. the folder was copied from another PC);
-* offers a Start-menu shortcut and, if Claude Code is installed, the two skills.
+* offers Start-menu shortcuts (**MCP Vault** and **Stop MCP Vault**) and, if Claude Code is installed, the two skills.
 
 Later starts skip all of that and open the UI in your browser.
 
@@ -78,14 +78,14 @@ write secret values: passwords and secret variables are entered in the window.
 
 | Command | |
 | --- | --- |
-| `status`, `stop`, `ui` | agent state / stop it / open the window |
+| `status`, `stop [--force]`, `ui` | agent state / stop it (`--force` also ends unresponsive agents; this is what `Stop MCP Vault.bat` runs) / open the window |
 | `list [--json]`, `show server\|host <name>`, `templates` | inspect (secrets only as set/unset) |
 | `host add\|edit\|remove <name> ...` | hosts (`remove` needs `--yes`) |
 | `server add\|edit\|remove <id> ...` | servers; `--secret NAME` declares a secret whose value goes in the UI |
 | `test server <id>`, `test host <name>` | MCP handshake + tool list / TCP + SSH login |
 | `apply [--dry-run]` | write launcher entries into the apps' configs |
 | `logs <server> [-n N]` | tail a server's log |
-| `install-shortcut`, `install-skills [--force]`, `package [dir]` | Start-menu entry, Claude skills, share zip |
+| `install-shortcut`, `install-skills [--force]`, `package [dir]` | Start-menu entries, Claude skills, share zip |
 
 Exit codes: 0 ok, 1 error, 2 usage, 4 agent not running or vault locked.
 

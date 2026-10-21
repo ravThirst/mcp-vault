@@ -6,6 +6,7 @@ import sys
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENTRY = os.path.join(APP_DIR, "vault.py")
 LAUNCHER_BAT = os.path.join(APP_DIR, "MCP Vault.bat")
+STOP_BAT = os.path.join(APP_DIR, "Stop MCP Vault.bat")
 STATIC_DIR = os.path.join(APP_DIR, "mcpvault", "static")
 
 DATA_DIR = os.environ.get("MCPVAULT_HOME") or os.path.join(

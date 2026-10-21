@@ -111,6 +111,26 @@ def spawn_detached(argv: list[str], cwd: str) -> None:
     )
 
 
+def agent_pids(entry: str) -> list[int]:
+    """PIDs of agent processes started from this app's vault.py (venv shims included)."""
+    env = dict(os.environ, MCPVAULT_ENTRY=entry)
+    out = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+         "Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
+         "Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains($env:MCPVAULT_ENTRY.ToLower()) "
+         "-and $_.CommandLine -match '\\sagent\\s*$' } | ForEach-Object { $_.ProcessId }"],
+        env=env, capture_output=True, text=True, creationflags=0x08000000,
+    ).stdout
+    return [int(x) for x in out.split() if x.strip().isdigit() and int(x) != os.getpid()]
+
+
+def stop_menu_shortcut_path() -> str:
+    return os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Stop MCP Vault.lnk")
+
+
+STOP_ICON = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shell32.dll") + ",27"
+
+
 def startup_shortcut_path() -> str:
     return os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "MCP Vault Agent.lnk")
 

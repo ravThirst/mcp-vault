@@ -32,31 +32,53 @@ def _status() -> int:
     return 0
 
 
-def _stop() -> int:
+def _stop(force: bool) -> int:
+    """Stop the agent. With force, also end agent processes that no longer answer
+    (e.g. a stale agent whose token file was overwritten)."""
+    import time
+
+    from . import winutil
     from .launcher import AgentClient
 
     client = AgentClient()
-    if not client.ping():
-        print("agent: not running")
-        return 0
-    client.call("POST", "/internal/shutdown")
-    print("agent: stopped")
+    stopped = False
+    if client.ping():
+        client.call("POST", "/internal/shutdown")
+        stopped = True
+    if force:
+        deadline = time.monotonic() + 5  # give a clean shutdown a moment first
+        leftovers = winutil.agent_pids(paths.ENTRY)
+        while leftovers and time.monotonic() < deadline:
+            time.sleep(0.5)
+            leftovers = winutil.agent_pids(paths.ENTRY)
+        for pid in leftovers:
+            try:
+                os.kill(pid, 9)  # TerminateProcess on Windows
+            except OSError:
+                pass
+        if leftovers:
+            print(f"agent: ended {len(leftovers)} unresponsive agent process(es)")
+            stopped = True
+    print("agent: stopped" if stopped else "agent: not running")
     return 0
 
 
-def _install_shortcut() -> int:
+def _install_shortcut(quiet: bool = False) -> int:
     from . import winutil
 
-    # Point at the .bat so the shortcut always goes through the dependency check.
+    # Point at the .bat files so the shortcuts always go through the dependency check.
     winutil.create_shortcut(winutil.start_menu_shortcut_path(), paths.LAUNCHER_BAT, "", paths.APP_DIR, "Open MCP Vault")
-    print(f"Start menu shortcut created: {winutil.start_menu_shortcut_path()}")
+    winutil.create_shortcut(winutil.stop_menu_shortcut_path(), paths.STOP_BAT, "", paths.APP_DIR,
+                            "Stop the MCP Vault agent (locks the vault)", icon=winutil.STOP_ICON)
+    if not quiet:
+        print(f"Start menu shortcuts created: {winutil.start_menu_shortcut_path()}, {winutil.stop_menu_shortcut_path()}")
     return 0
 
 
 # Files that go into a share zip. An allowlist, so a vault, logs, notes or a
 # .venv can never be included by accident (user data lives in %APPDATA% anyway).
-SHARE_FILES = ["MCP Vault.bat", "Make share zip.bat", "vault.py", "requirements.txt", "README.md", "SERVER-SPEC.md",
-               "LICENSE"]
+SHARE_FILES = ["MCP Vault.bat", "Stop MCP Vault.bat", "Make share zip.bat", "vault.py", "requirements.txt", "README.md",
+               "SERVER-SPEC.md", "LICENSE"]
 SHARE_DIRS = {"mcpvault": (".py", ".html"), "skills": (".md", ".py", ".json", ".txt")}
 
 
@@ -138,12 +160,12 @@ def main(argv: list[str]) -> int:
     if cmd == "status":
         return _status()
     if cmd == "stop":
-        return _stop()
+        return _stop("--force" in argv)
     if cmd == "install-shortcut":
-        return _install_shortcut()
+        return _install_shortcut("--quiet" in argv)
     if cmd == "package":
         return _package(argv[1] if len(argv) > 1 else None)
-    print("usage: vault.py [ui | status | stop | list | show | templates | logs | host | server | test | apply\n"
+    print("usage: vault.py [ui | status | stop [--force] | list | show | templates | logs | host | server | test | apply\n"
           "                 | run <server> | agent | install-shortcut | install-skills [--force] | package [dir]]\n"
           "       vault.py <command> --help   for details", file=sys.stderr)
     return 2

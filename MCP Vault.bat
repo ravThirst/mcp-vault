@@ -61,9 +61,14 @@ if errorlevel 1 goto :fail
 if errorlevel 1 goto :fail
 echo  Dependencies OK.
 
-if exist "%SHORTCUT%" goto :skills
+rem Already chose shortcuts earlier: refresh them (adds ones new versions bring, like Stop MCP Vault).
+if not exist "%SHORTCUT%" goto :ask_shortcut
+"%VPY%" "%APP%vault.py" install-shortcut --quiet
+goto :skills
+
+:ask_shortcut
 echo.
-choice /c YN /n /m " Add MCP Vault to the Start menu? [Y/N] "
+choice /c YN /n /m " Add MCP Vault (and Stop MCP Vault) to the Start menu? [Y/N] "
 if errorlevel 2 goto :skills
 "%VPY%" "%APP%vault.py" install-shortcut
 
