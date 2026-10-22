@@ -22,7 +22,7 @@ import threading
 import time
 import urllib.parse
 
-from . import __version__, adapters, clients, importer, model, paths, probe, winutil
+from . import __version__, adapters, clients, importer, model, paths, probe, toolcache, winutil
 from .store import Vault, VaultLocked, WrongPassword, atomic_write
 
 log = logging.getLogger("mcpvault")
@@ -259,6 +259,7 @@ class Agent:
                 if item["action"] == "delete":
                     d["servers"].remove(server)
                     self.server_status.pop(server["id"], None)
+                    toolcache.remove(server["id"])
                 else:
                     server["hosts"] = [h for h in server["hosts"] if h != hid]
             d["hosts"].remove(host)
@@ -281,6 +282,8 @@ class Agent:
                 raise ApiError(400, f"A server named {server['id']!r} already exists")
             if existing:
                 d["servers"][d["servers"].index(existing)] = server
+                if existing["id"] != server["id"]:
+                    toolcache.remove(existing["id"])  # renamed: the copy belongs to the old name
             else:
                 d["servers"].append(server)
             self.vault.save()
@@ -292,6 +295,7 @@ class Agent:
             d = self.data()
             d["servers"].remove(self.find_server(sid))
             self.vault.save()
+        toolcache.remove(sid)
         return {"ok": True}
 
     def api_test_host(self, _body, _q, hid) -> dict:
@@ -307,6 +311,9 @@ class Agent:
         except adapters.ResolveError as exc:
             raise ApiError(400, str(exc)) from None
         result = probe.test_server(spec, secrets_)
+        handshake = result.pop("handshake", None)
+        if result["ok"] and handshake:
+            toolcache.save(sid, handshake["initialize"], handshake["tools"])  # lets a locked vault answer startup
         self.server_status[sid] = result
         return result
 

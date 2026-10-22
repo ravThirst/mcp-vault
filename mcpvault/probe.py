@@ -150,6 +150,7 @@ def test_server(spec: dict, secrets: list[str], timeout: float = 45.0) -> dict:
                 break
         result["tools"] = [t.get("name") for t in tools]
         result["annotated"] = sum(1 for t in tools if t.get("annotations"))
+        result["handshake"] = {"initialize": init, "tools": tools}  # the agent saves it, then drops it
         result["ok"] = True
         info = result["server_info"]
         ident = " ".join(str(x) for x in (info.get("name"), info.get("version")) if x)

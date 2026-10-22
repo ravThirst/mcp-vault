@@ -102,12 +102,26 @@ to `~/.claude/skills`:
 
 ## Locking
 
-When Claude starts a server while the vault is locked, a single password
-window appears; after unlocking, all waiting servers start. Clients give a
-server about 30 s to start, so if you were slow, reconnect it (`/mcp` in
-Claude Code). Unlocking in the web UI or enabling *Start the agent at sign-in*
-avoids that. The vault auto-locks after the idle time set in Settings; servers
-already running keep working.
+Opening Claude while the vault is locked asks for nothing. Each server's
+launcher answers Claude's startup questions (handshake, tool list) from a saved
+copy of that server's tool list. The copy holds only tool names and
+descriptions, never credentials (`%APPDATA%\mcp-vault\toolcache`). The real
+server starts only when it is needed:
+
+* the **first tool call** shows the password window; after unlocking, the call
+  goes through (if you cancel, the call returns "MCP Vault is locked…" and the
+  next call asks again);
+* unlocking **any other way** (another server's tool call, the MCP Vault
+  window) starts the remaining waiting servers in the background, with no
+  further prompts.
+
+The copy is refreshed every time a server runs and by **Test** in the UI. A
+server without one yet starts with an empty tool list that fills in once the
+vault is unlocked. If a server's tools changed, Claude is told to reload them.
+`MCPVAULT_EAGER=1` brings back asking at startup.
+
+The vault auto-locks after the idle time set in Settings; servers already
+running keep working.
 
 ## Templates
 

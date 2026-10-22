@@ -110,10 +110,13 @@ passwords, arguments, variables) is read at server start.
 
 Work from the outside in: agent → server process → remote host.
 
-1. **`status`**. Not running or locked explains a whole class of failures. If every MCP
-   server failed at once with "timed out after 30000ms", the vault was locked
-   when Claude started and the password pop-up was not answered within the
-   client's 30 s. Ask the user to unlock in MCP Vault, then reconnect (`/mcp`).
+1. **`status`**. Not running or locked explains a whole class of failures. A locked
+   vault does not block startup: launchers answer from saved tool lists
+   (`%APPDATA%\mcp-vault\toolcache`) and the first tool call shows the password
+   window. A tool result "MCP Vault is locked, so this server could not start"
+   means that window was cancelled or timed out; ask the user to unlock, then retry
+   the call. A server with no tools at all while locked has no saved list yet:
+   it fills in once the vault is unlocked (or run `test server <id>` while unlocked).
 2. **`list`**. Is the server present and enabled, installed into the right app, with the right hosts?
    If the client still shows an old entry or no entry, run `apply --dry-run`: a pending change means apply was never run.
 3. **`test server <id>`** separates the cases:
