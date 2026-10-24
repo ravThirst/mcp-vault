@@ -38,6 +38,10 @@ INIT_ID = "mcp-vault-init"
 TOOLS_ID = "mcp-vault-tools"
 # List requests a server without those features is asked anyway by some clients.
 EMPTY_LISTS = {"resources/list": "resources", "resources/templates/list": "resourceTemplates", "prompts/list": "prompts"}
+# The only requests worth an unlock prompt while locked: they need the real server.
+# Anything else a client sends at startup (e.g. server/discover) is answered
+# "method not found", as a server without that feature would.
+NEEDS_SERVER = {"tools/call", "resources/read", "prompts/get", "completion/complete"}
 
 
 class LauncherError(Exception):
@@ -306,6 +310,8 @@ def _serve_locked(server_id: str, cached: dict | None) -> int:
             out.send({"jsonrpc": "2.0", "id": mid, "result": {"tools": tools}})
         elif method in EMPTY_LISTS:
             out.send({"jsonrpc": "2.0", "id": mid, "result": {EMPTY_LISTS[method]: []}})
+        elif method not in NEEDS_SERVER:
+            out.send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}})
         else:
             log.note(f"{method} needs the server: asking to unlock the vault")
             try:
