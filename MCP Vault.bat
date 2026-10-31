@@ -73,11 +73,13 @@ if errorlevel 2 goto :skills
 "%VPY%" "%APP%vault.py" install-shortcut
 
 :skills
-rem Offer the Claude Code skills only where Claude Code is installed and they are missing.
-if not exist "%USERPROFILE%\.claude" goto :launch
-if exist "%USERPROFILE%\.claude\skills\mcp-vault\SKILL.md" goto :launch
+rem Offer the skills only where a supported client is installed and they are missing.
+set "SKILLS_NEEDED="
+if exist "%USERPROFILE%\.claude" if not exist "%USERPROFILE%\.claude\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
+if exist "%APPDATA%\kimi-desktop\daimon-share\daimon\skills" if not exist "%APPDATA%\kimi-desktop\daimon-share\daimon\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
+if not defined SKILLS_NEEDED goto :launch
 echo.
-choice /c YN /n /m " Install the MCP Vault skills for Claude Code? [Y/N] "
+choice /c YN /n /m " Install the MCP Vault skills for Claude Code / Kimi Work? [Y/N] "
 if errorlevel 2 goto :launch
 "%VPY%" "%APP%vault.py" install-skills
 

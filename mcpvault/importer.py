@@ -157,7 +157,8 @@ def scan(data: dict) -> dict:
         prop = _analyse(name, primary)
         prop["clients"] = list(entries)
         if len({json.dumps(e, sort_keys=True) for e in entries.values()}) > 1:
-            prop["warnings"].append("Configured differently in Claude Code and Claude Desktop; the Claude Code version is used")
+            prop["warnings"].append(f"Configured differently across apps ({', '.join(sorted(entries))}); "
+                                    "the first listed version is used")
         prop["exists"] = name in existing_ids
         proposals.append(prop)
     return {"proposals": proposals, "notes": notes}

@@ -21,6 +21,20 @@ LOG_DIR = os.path.join(DATA_DIR, "logs")
 
 PORT = int(os.environ.get("MCPVAULT_PORT", "47821"))
 
+# Kimi Work (kimi-code runtime): plugins register MCP servers through a
+# kimi.plugin.json manifest in plugins/managed/<id>/ plus an entry in
+# plugins/installed.json. Skills live in the daimon skills folder.
+KIMI_HOME = os.environ.get("MCPVAULT_KIMI_HOME") or os.path.join(
+    os.environ.get("APPDATA") or os.path.expanduser("~"),
+    "kimi-desktop", "daimon-share", "daimon", "runtime", "kimi-code", "home")
+KIMI_SKILLS_DIR = os.environ.get("MCPVAULT_KIMI_SKILLS") or os.path.join(
+    os.environ.get("APPDATA") or os.path.expanduser("~"),
+    "kimi-desktop", "daimon-share", "daimon", "skills")
+KIMI_PLUGIN_ID = "mcp-vault"
+KIMI_PLUGIN_DIR = os.path.join(KIMI_HOME, "plugins", "managed", KIMI_PLUGIN_ID)
+KIMI_MANIFEST = os.path.join(KIMI_PLUGIN_DIR, "kimi.plugin.json")
+KIMI_INSTALLED = os.path.join(KIMI_HOME, "plugins", "installed.json")
+
 _VENV_SCRIPTS = os.path.join(APP_DIR, ".venv", "Scripts")
 
 

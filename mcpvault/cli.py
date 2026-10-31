@@ -108,23 +108,32 @@ def _install_skills(force: bool) -> int:
     import shutil
 
     src = os.path.join(paths.APP_DIR, "skills")
-    dst = os.path.join(os.path.expanduser("~"), ".claude", "skills")
     if not os.path.isdir(src):
         print("no skills folder in this copy of MCP Vault", file=sys.stderr)
         return 1
-    os.makedirs(dst, exist_ok=True)
-    for name in sorted(os.listdir(src)):
-        if not os.path.isfile(os.path.join(src, name, "SKILL.md")):
-            continue
-        target = os.path.join(dst, name)
-        if os.path.exists(target) and not force:
-            print(f"skip {name}: {target} exists (use --force to replace it)")
-            continue
-        if os.path.exists(target):
-            shutil.rmtree(target)
-        shutil.copytree(os.path.join(src, name), target)
-        print(f"installed skill {name} -> {target}")
-    print("Claude Code picks the skills up in new sessions.")
+    targets = []
+    claude = os.path.join(os.path.expanduser("~"), ".claude", "skills")
+    if os.path.isdir(os.path.dirname(claude)):
+        targets.append(("Claude Code", claude, "Claude Code picks the skills up in new sessions."))
+    if os.path.isdir(paths.KIMI_SKILLS_DIR):
+        targets.append(("Kimi Work", paths.KIMI_SKILLS_DIR, "Kimi Work picks the skills up in new sessions."))
+    if not targets:
+        print("no Claude Code or Kimi Work installation found", file=sys.stderr)
+        return 1
+    for label, dst, note in targets:
+        os.makedirs(dst, exist_ok=True)
+        for name in sorted(os.listdir(src)):
+            if not os.path.isfile(os.path.join(src, name, "SKILL.md")):
+                continue
+            target = os.path.join(dst, name)
+            if os.path.exists(target) and not force:
+                print(f"skip {name} ({label}): {target} exists (use --force to replace it)")
+                continue
+            if os.path.exists(target):
+                shutil.rmtree(target)
+            shutil.copytree(os.path.join(src, name), target)
+            print(f"installed skill {name} -> {target}")
+        print(note)
     return 0
 
 

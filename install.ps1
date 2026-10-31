@@ -74,12 +74,13 @@
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # Keep installed Claude skills in step with the new version.
+    # Keep installed agent skills in step with the new version.
     $skills = Join-Path $HOME '.claude\skills\mcp-vault\SKILL.md'
+    $kimiSkills = Join-Path $env:APPDATA 'kimi-desktop\daimon-share\daimon\skills\mcp-vault\SKILL.md'
     $py = Join-Path $dir '.venv\Scripts\python.exe'
-    if ($updating -and (Test-Path $skills) -and (Test-Path $py)) {
+    if ($updating -and ((Test-Path $skills) -or (Test-Path $kimiSkills)) -and (Test-Path $py)) {
         & $py (Join-Path $dir 'vault.py') install-skills --force | Out-Null
-        Say 'Updated the Claude Code skills.'
+        Say 'Updated the agent skills.'
     }
 
     Say 'Files are in place. Running setup (Python check, dependencies, shortcuts) ...' 'Green'
