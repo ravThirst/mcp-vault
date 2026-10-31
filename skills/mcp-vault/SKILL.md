@@ -1,6 +1,6 @@
 ---
 name: mcp-vault
-description: Operate and troubleshoot MCP Vault, the local Windows app that keeps MCP server hosts and credentials in an encrypted vault and launches every MCP server through `vault.py run <server>`. Use this whenever the user wants to add, register, rename, move or remove an MCP server or a host (PC, router, VPS, NAS) that an MCP server talks to; change which host or credentials a server uses; update Claude Code / Claude Desktop MCP config; or asks why an MCP server fails, times out ("connection timed out after 30000ms", "Connection closed"), shows no tools or reports a config error. Also use it for anything about the vault itself: unlocking, the master password, the agent, logs, backups, sharing the app. Use it even if the user never says "vault": in this setup every MCP server goes through it.
+description: Operate and troubleshoot MCP Vault, the local Windows app that keeps MCP server hosts and credentials in an encrypted vault and launches every MCP server through `vault.py run <server>`. Use this whenever the user wants to add, register, rename, move or remove an MCP server or a host (PC, router, VPS, NAS) that an MCP server talks to; change which host or credentials a server uses; update Claude Code / Claude Desktop / Kimi Work MCP config; or asks why an MCP server fails, times out ("connection timed out after 30000ms", "Connection closed"), shows no tools or reports a config error. Also use it for anything about the vault itself: unlocking, the master password, the agent, logs, backups, sharing the app. Use it even if the user never says "vault": in this setup every MCP server goes through it.
 ---
 
 # MCP Vault
@@ -11,7 +11,7 @@ the launcher asks a background agent for that server's settings and starts the
 real server with them. Understanding that chain is what makes troubleshooting fast:
 
 ```
-Claude Code / Desktop ─starts─> vault.py run <server> ─asks─> agent 127.0.0.1:47821 (holds the unlocked vault)
+Claude / Kimi Work ─starts─> vault.py run <server> ─asks─> agent 127.0.0.1:47821 (holds the unlocked vault)
                                       │                               │ (locked → one password pop-up)
                                       └─starts real server <──────────┘ env built from the server's hosts + variables
 ```
@@ -22,7 +22,7 @@ Claude Code / Desktop ─starts─> vault.py run <server> ─asks─> agent 127.
 | Vault (AES-GCM, master password) | `%APPDATA%\mcp-vault\vault.json` |
 | Agent log / per-server logs (secrets masked) | `%APPDATA%\mcp-vault\agent.log`, `%APPDATA%\mcp-vault\logs\<server>.log` |
 | Encrypted backups of app configs | `%APPDATA%\mcp-vault\backups\` |
-| Client configs it writes | `~\.claude.json` (Claude Code), `%APPDATA%\Claude\claude_desktop_config.json` (Claude Desktop) |
+| Client configs it writes | `~\.claude.json` (Claude Code), `%APPDATA%\Claude\claude_desktop_config.json` (Claude Desktop), `%APPDATA%\kimi-desktop\daimon-share\daimon\runtime\kimi-code\home\plugins\managed\mcp-vault\kimi.plugin.json` (Kimi Work; also registers the plugin in `plugins\installed.json`) |
 
 If the app is not at the default path, read any vault-managed entry in
 `~\.claude.json`: its `command` is the vault's python and its first arg is `vault.py`.
@@ -62,7 +62,7 @@ $V = "$HOME\.mcp-servers\mcp-vault"; & "$V\.venv\Scripts\python.exe" "$V\vault.p
 | `host add <name> --kind windows\|linux\|mikrotik\|other --address A [--port N] [--user U] [--protocol ssh\|winrm] [--auth password\|key] [--key-path P] [--readonly] [--description D]` | New host; password is then entered in the UI |
 | `host edit <name> [same options] [--rename NEW] [--enable\|--disable]` | Change only the given fields. A disabled host keeps its credentials but is not given to servers; a server whose hosts are all disabled won't start |
 | `host remove <name> [--yes]` | Without `--yes`: shows the effect. With it: deletes the host and its credentials, unlinks it from servers that keep other hosts, and deletes servers left with none (then `apply`) |
-| `server add <id> --command EXE [--arg A]... [--template T] [--host NAME]... [--inventory-env VAR] [--env K=V]... [--secret K]... [--app claude-code\|claude-desktop]... [--cwd D] [--description D]` | New server. `--secret K` declares a secret variable; its value goes in the UI |
+| `server add <id> --command EXE [--arg A]... [--template T] [--host NAME]... [--inventory-env VAR] [--env K=V]... [--secret K]... [--app claude-code\|claude-desktop\|kimi]... [--cwd D] [--description D]` | New server. `--secret K` declares a secret variable; its value goes in the UI |
 | `server edit <id> [--add-host H] [--remove-host H] [--host H]... [--env K=V] [--unset-env K] [--secret K] [--drop-secret K] [--enable\|--disable] [--rename NEW] ...` | Change only the given fields (`--arg`/`--host`/`--app` replace the whole list) |
 | `server remove <id> --yes` | Delete server entry and its secrets |
 | `test server <id> [-v]` | Start it, MCP handshake + tools/list: tool count, annotations, instructions, stderr |
@@ -93,7 +93,7 @@ try to work around it.
    The id becomes part of tool names (`mcp__<id>__tool`), so keep it short: letters, digits, `-`, `_`.
 4. After the user has entered the values: `test server <id>`; it must report OK.
 5. `apply --dry-run`, show it, then `apply` after a yes.
-6. Tell the user to reconnect: `/mcp` in Claude Code or a new session, or restart Claude Desktop.
+6. Tell the user to reconnect: `/mcp` in Claude Code or a new session, restart Claude Desktop, or restart Kimi Work (or toggle the mcp-vault plugin).
 
 **Change a password, token or key**: UI only (Hosts → Edit, or Servers → Edit
 for secret variables). No `apply` needed; the server picks it up when it next
@@ -126,7 +126,7 @@ Work from the outside in: agent → server process → remote host.
      Typical: missing Python package in the server's `.venv`, a config error, a crash on import.
    - `WARNING non-JSON output on stdout` → the server prints to stdout, which corrupts
      the MCP stream; it must log to stderr.
-   - OK here but broken in Claude → the client is still running an old process or
+   - OK here but broken in the app → the client is still running an old process or
      config: `apply --dry-run`, then reconnect.
 4. **Errors from inside a working server** ("WINDOWS_HOST is not set", "no hosts configured",
    "unknown host") mean the server got the wrong or empty settings: `show server <id>`

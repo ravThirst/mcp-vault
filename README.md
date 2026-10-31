@@ -2,27 +2,28 @@
 
 **One encrypted place for every MCP server's hosts and credentials, on Windows.**
 
-MCP client configs (`~/.claude.json`, `claude_desktop_config.json`) usually hold
-server passwords and API tokens in plain text, and every server invents its own
-way to configure hosts. MCP Vault moves all of that into one AES-256-GCM vault
+MCP client configs (`~/.claude.json`, `claude_desktop_config.json`, Kimi Work's
+plugin manifests) usually hold server passwords and API tokens in plain text,
+and every server invents its own way to configure hosts. MCP Vault moves all of
+that into one AES-256-GCM vault
 behind a master password, gives you a local web UI to edit it, and writes
 launcher entries into the client configs that contain no secrets at all.
 
 ```
-Claude Code / Desktop ──starts──> vault.py run windows ──asks──> agent (127.0.0.1, holds unlocked key)
+Claude / Kimi Work ──starts──> vault.py run windows ──asks──> agent (127.0.0.1, holds unlocked key)
                                         │                           │ (locked → one password pop-up)
                                         └──starts real server <─────┘ env: WINDOWS_HOST, WINDOWS_PASSWORD, ...
 ```
 
 - Hosts, passwords, keys and secret variables in one encrypted file; secrets masked in all logs
 - Web UI on 127.0.0.1: servers, hosts, connection and MCP handshake tests, logs, encrypted config backups
-- Imports your existing Claude Code / Claude Desktop MCP entries, then rewrites them without secrets
+- Works with Claude Code, Claude Desktop and Kimi Work; imports your existing MCP entries, then rewrites them without secrets
 - Works with existing servers unchanged (templates for windows-mcp, ubuntu-mcp, mikrotik-mcp, any env-var server)
-- A command line and two Claude Code skills, so Claude can manage servers without ever seeing a password
+- A command line and two skills (Claude Code and Kimi Work), so the agent can manage servers without ever seeing a password
 - [SERVER-SPEC.md](SERVER-SPEC.md): a standard for building MCP servers that all behave the same way
 
 **Requirements:** Windows 10/11, Python 3.10+ (offered automatically if missing),
-Claude Code and/or Claude Desktop.
+Claude Code, Claude Desktop and/or Kimi Work.
 
 ## Install and start
 
@@ -47,7 +48,8 @@ or `"MCP Vault.bat" setup`:
   Python 3.12 with winget if there is none;
 * creates `.venv` in the app folder and installs `requirements.txt`;
 * rebuilds `.venv` if it is broken (e.g. the folder was copied from another PC);
-* offers Start-menu shortcuts (**MCP Vault** and **Stop MCP Vault**) and, if Claude Code is installed, the two skills.
+* offers Start-menu shortcuts (**MCP Vault** and **Stop MCP Vault**) and the two
+  skills for every supported client found (Claude Code, Kimi Work).
 
 Later starts skip all of that and open the UI in your browser.
 
@@ -63,11 +65,15 @@ recipient extracts the zip anywhere and double-clicks `MCP Vault.bat`.
 ## Use
 
 1. **Create** the vault with a master password (it cannot be recovered).
-2. **Import**: picks up the servers already in `~/.claude.json` and Claude
-   Desktop's config, including the hosts in `ubuntu-mcp/hosts.json`.
+2. **Import**: picks up the servers already in `~/.claude.json`, Claude
+   Desktop's config and the vault's Kimi Work plugin manifest, including the
+   hosts in `ubuntu-mcp/hosts.json`.
 3. **Test** each server (MCP handshake + tool list) and host (TCP + SSH login).
-4. **Apply to apps**: replaces the plaintext entries with launcher entries.
-   The old files are backed up, encrypted, and can be restored from the same tab.
+4. **Apply to apps**: replaces the plaintext entries with launcher entries. For
+   Kimi Work it writes a `mcp-vault` plugin (`kimi.plugin.json` with one
+   launcher entry per server) and registers it in `plugins/installed.json`;
+   restart Kimi Work afterwards. The old files are backed up, encrypted, and
+   can be restored from the same tab.
 5. Delete leftover plaintext files the importer warns about (e.g. `hosts.json`).
 
 ## Command line
@@ -85,25 +91,26 @@ write secret values: passwords and secret variables are entered in the window.
 | `test server <id>`, `test host <name>` | MCP handshake + tool list / TCP + SSH login |
 | `apply [--dry-run]` | write launcher entries into the apps' configs |
 | `logs <server> [-n N]` | tail a server's log |
-| `install-shortcut`, `install-skills [--force]`, `package [dir]` | Start-menu entries, Claude skills, share zip |
+| `install-shortcut`, `install-skills [--force]`, `package [dir]` | Start-menu entries, agent skills (Claude Code / Kimi Work), share zip |
 
 Exit codes: 0 ok, 1 error, 2 usage, 4 agent not running or vault locked.
 
-## Claude skills
+## Agent skills
 
-`skills/` holds two Claude Code skills; `vault.py install-skills` copies them
-to `~/.claude/skills`:
+`skills/` holds two skills; `vault.py install-skills` copies them to every
+supported client found on the machine (`~/.claude/skills` for Claude Code,
+`%APPDATA%\kimi-desktop\daimon-share\daimon\skills` for Kimi Work):
 
-* **mcp-vault**: Claude operates and troubleshoots the vault with the CLI above,
-  and never handles passwords itself.
-* **mcp-server-builder**: Claude builds new MCP servers to
+* **mcp-vault**: the agent operates and troubleshoots the vault with the CLI
+  above, and never handles passwords itself.
+* **mcp-server-builder**: the agent builds new MCP servers to
   [SERVER-SPEC.md](SERVER-SPEC.md) from a tested template and registers them
   with the `inventory` template.
 
 ## Locking
 
-Opening Claude while the vault is locked asks for nothing. Each server's
-launcher answers Claude's startup questions (handshake, tool list) from a saved
+Opening a client while the vault is locked asks for nothing. Each server's
+launcher answers the client's startup questions (handshake, tool list) from a saved
 copy of that server's tool list. The copy holds only tool names and
 descriptions, never credentials (`%APPDATA%\mcp-vault\toolcache`). The real
 server starts only when it is needed:
@@ -117,7 +124,7 @@ server starts only when it is needed:
 
 The copy is refreshed every time a server runs and by **Test** in the UI. A
 server without one yet starts with an empty tool list that fills in once the
-vault is unlocked. If a server's tools changed, Claude is told to reload them.
+vault is unlocked. If a server's tools changed, the client is told to reload them.
 `MCPVAULT_EAGER=1` brings back asking at startup.
 
 The vault auto-locks after the idle time set in Settings; servers already
