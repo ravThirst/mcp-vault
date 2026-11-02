@@ -624,7 +624,7 @@ function editHost(x, opts = {}) {
   const nameIn = h("input", { type: "text", value: v.name, placeholder: "e.g. office-pc" });
   const kindSel = h("select", {}, Object.entries(S.meta.kinds).map(([k, l]) => h("option", { value: k, selected: k === v.kind }, l)));
   const addrIn = h("input", { type: "text", value: v.address, class: "mono", placeholder: "192.168.0.10 or host.example.com" });
-  const protoSel = h("select", {}, h("option", { value: "ssh", selected: v.protocol === "ssh" }, "SSH"), h("option", { value: "winrm", selected: v.protocol === "winrm" }, "WinRM"));
+  const protoSel = h("select", {}, h("option", { value: "ssh", selected: v.protocol === "ssh" }, "SSH"), h("option", { value: "winrm", selected: v.protocol === "winrm" }, "WinRM"), h("option", { value: "agent", selected: v.protocol === "agent" }, "Agent"));
   const portIn = h("input", { type: "number", value: x ? v.port : "", min: 1, max: 65535 });
   const sslIn = h("input", { type: "checkbox", checked: v.use_ssl });
   const userIn = h("input", { type: "text", value: v.username, class: "mono", autocomplete: "off" });
@@ -642,15 +642,15 @@ function editHost(x, opts = {}) {
   const keyF = field("Private key path", keyIn), sudoF = field("sudo password", sudo.el, "Only if it differs from the login password.");
   const roF = check("Read-only (the server refuses write operations, where supported)", roIn);
   function sync() {
-    const win = kindSel.value === "windows", winrm = win && protoSel.value === "winrm";
+    const win = kindSel.value === "windows", winrm = win && protoSel.value === "winrm", agent = win && protoSel.value === "agent";
     protoF.style.display = win ? "" : "none";
     sslF.style.display = winrm ? "" : "none";
-    authF.style.display = winrm ? "none" : "";
-    const key = !winrm && authSel.value === "key";
+    authF.style.display = winrm || agent ? "none" : "";
+    const key = !winrm && !agent && authSel.value === "key";
     pwF.style.display = key ? "none" : ""; keyF.style.display = key ? "" : "none";
     sudoF.style.display = kindSel.value === "linux" ? "" : "none";
     roF.style.display = ["windows", "linux"].includes(kindSel.value) ? "" : "none";
-    portIn.placeholder = String(winrm ? (sslIn.checked ? 5986 : 5985) : 22);
+    portIn.placeholder = String(winrm ? (sslIn.checked ? 5986 : 5985) : agent ? 5990 : 22);
   }
   [kindSel, protoSel, authSel, sslIn].forEach((el) => el.addEventListener("change", sync));
 

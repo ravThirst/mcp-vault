@@ -28,6 +28,8 @@ def new_id() -> str:
 
 
 def default_port(kind: str, protocol: str, use_ssl: bool) -> int:
+    if kind == "windows" and protocol == "agent":
+        return 5990
     if kind == "windows" and protocol == "winrm":
         return 5986 if use_ssl else 5985
     return 22
@@ -52,8 +54,10 @@ def clean_host(p: dict, existing: dict | None) -> dict:
     protocol = _text(p, "protocol") or "ssh"
     if kind != "windows":
         protocol = "ssh"
-    if protocol not in ("ssh", "winrm"):
-        raise ValidationError("Protocol must be ssh or winrm")
+    allowed = ("ssh", "winrm", "agent") if kind == "windows" else ("ssh",)
+    if protocol not in allowed:
+        raise ValidationError("Protocol must be ssh, winrm or agent" if kind == "windows"
+                              else "Protocol must be ssh or winrm")
     use_ssl = bool(p.get("use_ssl")) and protocol == "winrm"
 
     raw_port = _text(p, "port")
@@ -65,7 +69,7 @@ def clean_host(p: dict, existing: dict | None) -> dict:
         raise ValidationError("Port must be between 1 and 65535")
 
     auth = _text(p, "auth") or "password"
-    if protocol == "winrm":
+    if protocol in ("winrm", "agent"):
         auth = "password"
     if auth not in ("password", "key"):
         raise ValidationError("Authentication must be password or key")

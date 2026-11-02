@@ -365,7 +365,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--address")
     p.add_argument("--port")
     p.add_argument("--user")
-    p.add_argument("--protocol", choices=["ssh", "winrm"])
+    p.add_argument("--protocol", choices=["ssh", "winrm", "agent"])
     _bool_pair(p, "ssl", "ssl", "WinRM over HTTPS", "WinRM over HTTP")
     p.add_argument("--auth", choices=["password", "key"])
     p.add_argument("--key-path", dest="key_path")
