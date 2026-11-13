@@ -79,7 +79,13 @@ def _install_shortcut(quiet: bool = False) -> int:
 # .venv can never be included by accident (user data lives in %APPDATA% anyway).
 SHARE_FILES = ["MCP Vault.bat", "Stop MCP Vault.bat", "Make share zip.bat", "vault.py", "requirements.txt", "README.md",
                "SERVER-SPEC.md", "LICENSE"]
-SHARE_DIRS = {"mcpvault": (".py", ".html"), "skills": (".md", ".py", ".json", ".txt")}
+SHARE_DIRS = {
+    "mcpvault": (".py", ".html"),
+    "skills": (".md", ".py", ".json", ".txt"),
+    "agent": (".ps1", ".bat", ".md"),
+    "servers": (".py", ".json", ".txt", ".md"),
+}
+SKIP_SHARE_NAMES = {"hosts.json", "agent.key", "agent.log", "agent.pid"}
 
 
 def _package(out_dir: str | None) -> int:
@@ -92,9 +98,16 @@ def _package(out_dir: str | None) -> int:
     out = os.path.join(out_dir, f"mcp-vault-{__version__}.zip")
     files = [f for f in SHARE_FILES if os.path.exists(os.path.join(paths.APP_DIR, f))]
     for d, exts in SHARE_DIRS.items():
-        for root, dirs, names in os.walk(os.path.join(paths.APP_DIR, d)):
-            dirs[:] = [x for x in dirs if x != "__pycache__"]
-            files += [os.path.relpath(os.path.join(root, n), paths.APP_DIR) for n in names if n.endswith(exts)]
+        top = os.path.join(paths.APP_DIR, d)
+        if not os.path.isdir(top):
+            continue
+        for root, dirs, names in os.walk(top):
+            dirs[:] = [x for x in dirs if x not in ("__pycache__", ".venv", ".git")]
+            files += [
+                os.path.relpath(os.path.join(root, n), paths.APP_DIR)
+                for n in names
+                if n.endswith(exts) and n.lower() not in SKIP_SHARE_NAMES
+            ]
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         for rel in sorted(files):
             zf.write(os.path.join(paths.APP_DIR, rel), os.path.join("mcp-vault", rel))
@@ -104,22 +117,41 @@ def _package(out_dir: str | None) -> int:
     return 0
 
 
-def _install_skills(force: bool) -> int:
+def _install_skills(force: bool = False) -> int:
     import shutil
+
+    try:
+        os.makedirs(paths.DATA_DIR, exist_ok=True)
+        app_dir_file = getattr(paths, "APP_DIR_FILE", os.path.join(paths.DATA_DIR, "app_dir.txt"))
+        with open(app_dir_file, "w", encoding="utf-8") as fh:
+            fh.write(paths.APP_DIR)
+    except OSError:
+        pass
 
     src = os.path.join(paths.APP_DIR, "skills")
     if not os.path.isdir(src):
         print("no skills folder in this copy of MCP Vault", file=sys.stderr)
         return 1
+    home = os.path.expanduser("~")
     targets = []
-    claude = os.path.join(os.path.expanduser("~"), ".claude", "skills")
-    if os.path.isdir(os.path.dirname(claude)):
+    claude_home = os.environ.get("MCPVAULT_CLAUDE_HOME") or os.path.join(home, ".claude")
+    claude = os.path.join(claude_home, "skills")
+    if os.path.isdir(claude_home):
         targets.append(("Claude Code", claude, "Claude Code picks the skills up in new sessions."))
-    if os.path.isdir(paths.KIMI_SKILLS_DIR):
+    if os.path.isdir(paths.KIMI_SKILLS_DIR) or os.path.isdir(os.path.dirname(paths.KIMI_SKILLS_DIR)):
         targets.append(("Kimi Work", paths.KIMI_SKILLS_DIR, "Kimi Work picks the skills up in new sessions."))
+    if os.path.isdir(paths.CODEX_HOME):
+        targets.append(("Codex", paths.CODEX_SKILLS_DIR, "Codex picks the skills up in new sessions."))
+    ag_alt = os.path.join(home, ".gemini", "antigravity")
+    if os.path.isdir(paths.ANTIGRAVITY_HOME) or (
+        not os.environ.get("MCPVAULT_ANTIGRAVITY_HOME") and os.path.isdir(ag_alt)
+    ):
+        targets.append(("Antigravity", paths.ANTIGRAVITY_SKILLS_DIR, "Antigravity picks the skills up automatically."))
     if not targets:
-        print("no Claude Code or Kimi Work installation found", file=sys.stderr)
+        print("no supported client installation found (Claude Code, Kimi Work, Codex, Antigravity)", file=sys.stderr)
         return 1
+    default_app_dir = os.path.join(home, ".mcp-servers", "mcp-vault")
+    stamp_app_dir = os.path.normcase(os.path.normpath(paths.APP_DIR)) != os.path.normcase(os.path.normpath(default_app_dir))
     for label, dst, note in targets:
         os.makedirs(dst, exist_ok=True)
         for name in sorted(os.listdir(src)):
@@ -131,7 +163,18 @@ def _install_skills(force: bool) -> int:
                 continue
             if os.path.exists(target):
                 shutil.rmtree(target)
-            shutil.copytree(os.path.join(src, name), target)
+            shutil.copytree(os.path.join(src, name), target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            if stamp_app_dir:
+                skill_md = os.path.join(target, "SKILL.md")
+                try:
+                    with open(skill_md, encoding="utf-8") as fh:
+                        text = fh.read()
+                    updated = text.replace(r"$HOME\.mcp-servers\mcp-vault", paths.APP_DIR)
+                    if updated != text:
+                        with open(skill_md, "w", encoding="utf-8", newline="\n") as fh:
+                            fh.write(updated)
+                except OSError:
+                    pass
             print(f"installed skill {name} -> {target}")
         print(note)
     return 0

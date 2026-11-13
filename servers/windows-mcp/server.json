@@ -1,0 +1,23 @@
+{
+  "name": "local/windows-mcp",
+  "description": "Administers remote Windows machines over WinRM, SSH or a portable agent: commands, files, services, processes, event logs, tasks, disks.",
+  "version": "2.1.0",
+  "packages": [
+    {
+      "registryType": "local",
+      "identifier": "windows-mcp",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "WINDOWS_MCP_HOSTS", "description": "Inline JSON host inventory (filled by MCP Vault)", "isRequired": false, "isSecret": true },
+        { "name": "WINDOWS_MCP_HOSTS_FILE", "description": "Path to a JSON host inventory", "isRequired": false, "isSecret": false },
+        { "name": "WINDOWS_HOST", "description": "Single-host mode: address (legacy)", "isRequired": false, "isSecret": false },
+        { "name": "WINDOWS_USERNAME", "description": "Single-host mode: user (legacy)", "isRequired": false, "isSecret": false },
+        { "name": "WINDOWS_PASSWORD", "description": "Single-host mode: password (legacy)", "isRequired": false, "isSecret": true },
+        { "name": "WINDOWS_MCP_TRANSPORT", "description": "Default protocol: winrm, ssh or agent", "isRequired": false, "isSecret": false },
+        { "name": "WINDOWS_MCP_READONLY", "description": "true refuses every write tool", "isRequired": false, "isSecret": false },
+        { "name": "WINDOWS_WINRM_AUTH", "description": "WinRM auth: ntlm, basic, kerberos, certificate", "isRequired": false, "isSecret": false },
+        { "name": "WINDOWS_SSL_VERIFY", "description": "WinRM: validate the server certificate", "isRequired": false, "isSecret": false }
+      ]
+    }
+  ]
+}

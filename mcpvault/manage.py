@@ -1,8 +1,9 @@
 """Management commands: inspect and edit the vault without touching secret values.
 
-Meant for scripts and for Claude. Everything goes through the running agent
-(so the vault must be unlocked), and nothing here can read or write a
-password or secret variable; those are entered in the MCP Vault window.
+Meant for scripts and for AI agents (Claude, Codex, Antigravity, Kimi Work).
+Everything goes through the running agent (so the vault must be unlocked), and
+nothing here can read or write a password or secret variable; those are entered
+in the MCP Vault window.
 
 Exit codes: 0 ok, 1 error, 2 usage, 4 agent not running or vault locked.
 """
@@ -46,18 +47,42 @@ def _snapshot(c: AgentClient) -> dict:
     return _call(c, "GET", "/internal/manage/snapshot")
 
 
+def _host_kind_label(h: dict) -> str:
+    return h["kind"] + (f"/{h['protocol']}" if h.get("kind") == "windows" else "")
+
+
 def _find_host(snap: dict, ref: str) -> dict:
+    low = ref.lower()
     for h in snap["hosts"]:
-        if h["id"] == ref or h["name"].lower() == ref.lower():
+        if h["id"] == ref or h["name"].lower() == low:
             return h
+    srv = next((s for s in snap["servers"] if s["id"] == ref or s["id"].lower() == low), None)
+    if srv is not None:
+        hosts_by_id = {h["id"]: h["name"] for h in snap["hosts"]}
+        attached = ", ".join(hosts_by_id[hid] for hid in srv.get("hosts", []) if hid in hosts_by_id) or "none"
+        raise CliError(
+            f"No host named {ref!r} — {srv['id']!r} is an MCP server ({srv['template']}, hosts: {attached}). "
+            f"Run: vault.py test server {srv['id']}"
+        )
     raise CliError(f"No host named {ref!r}. Hosts: {', '.join(h['name'] for h in snap['hosts']) or 'none'}")
 
 
 def _find_server(snap: dict, ref: str) -> dict:
+    low = ref.lower()
     for s in snap["servers"]:
         if s["id"] == ref:
             return s
-    raise CliError(f"No server named {ref!r}. Servers: {', '.join(s['id'] for s in snap['servers']) or 'none'}")
+    for s in snap["servers"]:
+        if s["id"].lower() == low:
+            return s
+    host = next((h for h in snap["hosts"] if h["id"] == ref or h["name"].lower() == low), None)
+    if host is not None:
+        used = ", ".join(host.get("used_by") or []) or "none"
+        raise CliError(
+            f"No MCP server named {ref!r} — {host['name']!r} is a {_host_kind_label(host)} host "
+            f"(used by: {used}). Run: vault.py test host {host['name']}"
+        )
+    raise CliError(f"No MCP server named {ref!r}. Servers: {', '.join(s['id'] for s in snap['servers']) or 'none'}")
 
 
 def _out(args, data, text: str) -> None:
@@ -81,11 +106,18 @@ def cmd_list(args) -> int:
             + (f"\n  {'':<16} last test {st['time']}: {st['summary']}" if st else ""))
     lines.append("HOSTS")
     for h in snap["hosts"]:
-        kind = h["kind"] + (f"/{h['protocol']}" if h["kind"] == "windows" else "")
-        auth = "key" if h["auth"] == "key" else ("password set" if h["secrets_set"]["password"] else "NO PASSWORD")
+        kind = _host_kind_label(h)
+        is_agent = h.get("kind") == "windows" and h.get("protocol") == "agent"
+        if is_agent:
+            auth = "agent key set" if h["secrets_set"]["password"] else "NO AGENT KEY"
+        elif h["auth"] == "key":
+            auth = "key"
+        else:
+            auth = "password set" if h["secrets_set"]["password"] else "NO PASSWORD"
+        target = f"{h['username']}@{h['address']}:{h['port']}" if h.get("username") else f"{h['address']}:{h['port']}"
         st = snap["status"]["hosts"].get(h["id"])
         state = "" if h.get("enabled", True) else "DISABLED  "
-        lines.append(f"  {h['name']:<16} {kind:<13} {state}{h['username']}@{h['address']}:{h['port']}  {auth}"
+        lines.append(f"  {h['name']:<16} {kind:<13} {state}{target}  {auth}"
                      f"  used by: {', '.join(h['used_by']) or '-'}" + (f"  [{st['summary']}]" if st else ""))
     _out(args, {"servers": snap["servers"], "hosts": snap["hosts"], "running": snap["running"],
                 "status": snap["status"]}, "\n".join(lines))
@@ -168,12 +200,16 @@ def cmd_host(args) -> int:
 
     result = _call(c, "POST", "/internal/manage/hosts", payload)
     saved = _find_host(_snapshot(c), result["id"])
-    print(f"Saved host {saved['name']}: {saved['kind']} {saved['username']}@{saved['address']}:{saved['port']} ({saved['auth']})"
+    is_agent = saved.get("kind") == "windows" and saved.get("protocol") == "agent"
+    saved_target = f"{saved['username']}@{saved['address']}:{saved['port']}" if saved.get("username") else f"{saved['address']}:{saved['port']}"
+    saved_auth = "agent key" if is_agent else saved["auth"]
+    print(f"Saved host {saved['name']}: {_host_kind_label(saved)} {saved_target} ({saved_auth})"
           + ("." if saved.get("enabled", True) else ", DISABLED (servers do not receive it)."))
     if saved["auth"] == "password" and not saved["secrets_set"]["password"]:
-        print(f"Next: enter its password in MCP Vault -> Hosts -> {saved['name']} -> Edit.")
+        secret_label = "agent key" if is_agent else "password"
+        print(f"Next: enter its {secret_label} in MCP Vault -> Hosts -> {saved['name']} -> Edit.")
     if saved["used_by"]:
-        print(f"Servers using it ({', '.join(saved['used_by'])}) pick up the change the next time they start.")
+        print(f"Running servers using it ({', '.join(saved['used_by'])}) pick up the change automatically.")
     return 0
 
 
@@ -189,6 +225,37 @@ def _parse_env(pairs: list[str]) -> dict:
     return env
 
 
+def _bundled_server_defaults(template: str, snap: dict | None = None) -> tuple[str, list[str], str] | None:
+    if template in ("windows-mcp", "ubuntu-mcp"):
+        srv_dir = os.path.join(paths.APP_DIR, "servers", template)
+        for rel in (os.path.join("src", "server.py"), "server.py"):
+            script = os.path.join(srv_dir, rel)
+            if os.path.isfile(script):
+                return paths.python_console(), [script], srv_dir
+    meta_tpl = ((snap or {}).get("meta") or {}).get("templates", {}).get(template) or {}
+    if meta_tpl.get("default_command"):
+        return (
+            meta_tpl["default_command"],
+            list(meta_tpl.get("default_args") or []),
+            meta_tpl.get("default_cwd") or "",
+        )
+    return None
+
+
+def _installed_or_all_clients(snap: dict | None = None) -> list[str]:
+    meta_installed = ((snap or {}).get("meta") or {}).get("installed_clients")
+    if meta_installed:
+        return list(meta_installed)
+    from . import clients as _clients
+
+    fn = getattr(_clients, "installed_clients", None)
+    if callable(fn):
+        found = fn()
+        if found:
+            return list(found)
+    return list(_clients.CLIENTS)
+
+
 def cmd_server(args) -> int:
     c = _client()
     snap = _snapshot(c)
@@ -201,12 +268,26 @@ def cmd_server(args) -> int:
         return 0
 
     if args.action == "add":
-        if any(s["id"] == args.id for s in snap["servers"]):
+        if any(s["id"].lower() == args.id.lower() for s in snap["servers"]):
             raise CliError(f"A server named {args.id!r} already exists; use `server edit`.")
-        if not args.command:
-            raise CliError("server add needs --command", 2)
-        payload = {"id": args.id, "template": args.template or "generic", "args": [], "env": {}, "secret_env": {},
-                   "hosts": [], "clients": list(clients_default()), "enabled": True}
+        tpl_name = args.template or "generic"
+        bundled = _bundled_server_defaults(tpl_name, snap) if not args.command else None
+        if not args.command and not bundled:
+            raise CliError(
+                "server add needs --command (or --template windows-mcp|ubuntu-mcp to use the bundled server)", 2
+            )
+        payload = {
+            "id": args.id,
+            "template": tpl_name,
+            "command": args.command or (bundled[0] if bundled else ""),
+            "args": list(bundled[1]) if (bundled and not args.arg and not args.clear_args) else [],
+            "cwd": bundled[2] if (bundled and args.cwd is None) else "",
+            "env": {},
+            "secret_env": {},
+            "hosts": [],
+            "clients": _installed_or_all_clients(snap),
+            "enabled": True,
+        }
         before = None
     else:
         before = _find_server(snap, args.id)
@@ -264,7 +345,7 @@ def cmd_server(args) -> int:
     if affects_apps:
         print("Then run `vault.py apply` so the apps start it through the vault.")
     else:
-        print("Apps pick up the change the next time they start the server (reconnect it, e.g. /mcp in Claude Code).")
+        print("Running servers pick up the change automatically (no app restart needed).")
     return 0
 
 
@@ -282,11 +363,14 @@ def cmd_test(args) -> int:
     if args.kind == "host":
         h = _find_host(snap, args.name)
         r = _call(c, "POST", f"/internal/manage/hosts/{h['id']}/test")
-        _out(args, r, f"{h['name']}: {'OK' if r['ok'] else 'FAILED'} - {r['summary']}")
+        used = f"  [used by: {', '.join(h['used_by'])}]" if h.get("used_by") else ""
+        _out(args, r, f"{h['name']}: {'OK' if r['ok'] else 'FAILED'} - {r['summary']}{used}")
         return 0 if r["ok"] else 1
     s = _find_server(snap, args.name)
     r = _call(c, "POST", f"/internal/manage/servers/{s['id']}/test", timeout=120)
     lines = [f"{s['id']}: {'OK' if r['ok'] else 'FAILED'} - {r['summary']}"]
+    for w in r.get("warnings") or []:
+        lines.append(f"  WARNING: {w}")
     if r.get("tools") is not None:
         lines.append(f"  tools ({len(r['tools'])}): {', '.join(r['tools'])}")
         lines.append(f"  annotated: {r['annotated']}/{len(r['tools'])}   instructions: {'yes' if r.get('has_instructions') else 'no'}"
@@ -381,7 +465,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("action", choices=["add", "edit", "remove"])
     p.add_argument("id")
     p.add_argument("--template", choices=list(adapters.TEMPLATES))
-    p.add_argument("--command")
+    p.add_argument("--command", help="executable to start (auto-filled for bundled windows-mcp / ubuntu-mcp if omitted)")
     p.add_argument("--arg", action="append", help="argument (repeat; replaces all arguments)")
     p.add_argument("--clear-args", action="store_true")
     p.add_argument("--cwd")
@@ -400,7 +484,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="confirm remove")
     p.set_defaults(fn=cmd_server)
 
-    p = sub.add_parser("test", help="test a host (TCP + SSH login) or a server (MCP handshake)")
+    p = sub.add_parser(
+        "test",
+        help="test a host (TCP + SSH login or encrypted WinMCP agent ping) or a server (MCP handshake + warnings)",
+        description="Test a host (TCP reachability + SSH login or encrypted WinMCP agent ping) or a server (MCP handshake + tools/list + compatibility warnings).",
+    )
     p.add_argument("kind", choices=["server", "host"])
     p.add_argument("name")
     p.add_argument("-v", "--verbose", action="store_true", help="always show stderr")

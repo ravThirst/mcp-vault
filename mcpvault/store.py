@@ -59,6 +59,10 @@ class Vault:
         self._wrapped: dict | None = None
         self._dek: bytes | None = None
         self.data: dict | None = None
+        self.revision: int = time.time_ns()
+
+    def _bump(self) -> None:
+        self.revision = max(self.revision + 1, time.time_ns())
 
     # -- state ---------------------------------------------------------------
 
@@ -108,6 +112,7 @@ class Vault:
         for key, value in empty_data().items():
             data.setdefault(key, value)
         self._kdf, self._wrapped, self._dek, self.data = obj["kdf"], obj["key"], dek, data
+        self._bump()
 
     def verify(self, password: str) -> bool:
         """Check a password against the file without changing state."""
@@ -120,6 +125,7 @@ class Vault:
     def lock(self) -> None:
         self._dek = None
         self.data = None
+        self._bump()
 
     def save(self) -> None:
         if self._dek is None or self.data is None:
@@ -137,6 +143,7 @@ class Vault:
             with open(self.path, "rb") as fh:
                 atomic_write(self.path + ".prev", fh.read())
         atomic_write(self.path, json.dumps(obj, indent=2).encode("utf-8"))
+        self._bump()
 
     def change_password(self, old: str, new: str) -> None:
         if self._dek is None:

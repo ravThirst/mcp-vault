@@ -157,16 +157,26 @@ class Agent:
             for hid in s["hosts"]:
                 used_by.setdefault(hid, []).append(s["id"])
         hosts = [{**model.mask_host(h), "used_by": used_by.get(h["id"], [])} for h in d["hosts"]]
+        installed = clients.installed_clients()
+        plan = clients.plan(d["servers"])
+        active_clients = set(installed) | {c for s in d["servers"] if s.get("enabled", True) for c in s.get("clients", [])}
+        pending_apply = sum(
+            sum(1 for ch in item["changes"] if ch["action"] != "keep")
+            for item in plan
+            if not item.get("error") and (not active_clients or item["client"] in active_clients or item.get("exists"))
+        )
         return {
             "hosts": hosts,
             "servers": [model.mask_server(s) for s in d["servers"]],
             "settings": d["settings"],
             "status": {"hosts": self.host_status, "servers": self.server_status},
             "running": self.running_counts(),
+            "pending_apply": pending_apply,
             "meta": {
-                "templates": adapters.TEMPLATES,
+                "templates": adapters.template_meta(),
                 "kinds": model.HOST_KINDS,
                 "clients": {k: {"label": v["label"], "path": v["path"]} for k, v in clients.CLIENTS.items()},
+                "installed_clients": installed,
                 "python": paths.python_console(),
                 "entry": paths.ENTRY,
                 "vault_file": paths.VAULT_FILE,
@@ -306,11 +316,14 @@ class Agent:
 
     def api_test_server(self, _body, _q, sid) -> dict:
         server = self.find_server(sid)
+        hosts_map = self.hosts_by_id()
         try:
-            spec, secrets_ = adapters.resolve(server, self.hosts_by_id())
+            spec, secrets_ = adapters.resolve(server, hosts_map)
         except adapters.ResolveError as exc:
             raise ApiError(400, str(exc)) from None
-        result = probe.test_server(spec, secrets_)
+        active_hosts = [hosts_map[hid] for hid in server.get("hosts", [])
+                        if hid in hosts_map and hosts_map[hid].get("enabled", True)]
+        result = probe.test_server(spec, secrets_, server=server, hosts=active_hosts)
         handshake = result.pop("handshake", None)
         if result["ok"] and handshake:
             toolcache.save(sid, handshake["initialize"], handshake["tools"])  # lets a locked vault answer startup
@@ -368,9 +381,18 @@ class Agent:
         return {"clients": clients.plan(self.data()["servers"])}
 
     def api_clients_apply(self, body, _q) -> dict:
+        import contextlib
+        import io
+        from .cli import _install_skills
+
         with self.lock:
             servers = self.data()["servers"]
             results = clients.apply(self.vault, servers, list(body.get("clients") or []))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _install_skills(True)
+        except Exception:  # noqa: BLE001
+            log.exception("skill sync during apply failed")
         return {"results": results}
 
     def api_backups(self, _body, _q) -> dict:
@@ -423,21 +445,26 @@ class Agent:
     def internal_resolve(self, body) -> tuple[int, dict]:
         sid = str(body.get("server") or "")
         with self.lock:
+            rev = self.vault.revision
             if not self.vault.exists():
-                return 404, {"error": "no vault has been created yet; run `vault.py ui`"}
+                return 404, {"error": "no vault has been created yet; run `vault.py ui`", "revision": rev}
             if not self.vault.unlocked:
-                return 423, {"locked": True, "prompt_active": self.prompt_active, "cancelled_at": self.cancelled_at}
+                return 423, {"locked": True, "prompt_active": self.prompt_active,
+                             "cancelled_at": self.cancelled_at, "revision": rev}
             self.touch()
             server = next((s for s in self.vault.data["servers"] if s["id"] == sid), None)
             if server is None:
-                return 404, {"error": f"the vault has no server named {sid!r}"}
+                return 404, {"error": f"the vault has no server named {sid!r}", "revision": rev}
             if not server.get("enabled", True):
-                return 403, {"error": f"server {sid!r} is disabled in MCP Vault"}
+                return 409, {"error": f"server {sid!r} is disabled in MCP Vault. Enable it to use it again.",
+                             "standby": True, "revision": rev}
             try:
                 spec, secrets_ = adapters.resolve(server, {h["id"]: h for h in self.vault.data["hosts"]})
+            except adapters.StandbyError as exc:
+                return 409, {"error": str(exc), "standby": True, "revision": rev}
             except adapters.ResolveError as exc:
-                return 400, {"error": str(exc)}
-        return 200, {"spec": spec, "secrets": secrets_}
+                return 400, {"error": str(exc), "revision": rev}
+        return 200, {"spec": spec, "secrets": secrets_, "revision": rev}
 
     def internal_event(self, body) -> tuple[int, dict]:
         pid = int(body.get("pid") or 0)
@@ -604,7 +631,8 @@ def make_handler(agent: Agent):
             if not hmac.compare_digest(self.headers.get("X-Agent-Token") or "", agent.token):
                 return self._send(403, {"error": "bad agent token"})
             if path == "/internal/ping":
-                return self._send(200, {"ok": True, "unlocked": agent.vault.unlocked})
+                return self._send(200, {"ok": True, "unlocked": agent.vault.unlocked,
+                                        "revision": agent.vault.revision, "pid": os.getpid()})
             body = self._body()
             if path == "/internal/resolve" and method == "POST":
                 return self._send(*agent.internal_resolve(body))
@@ -666,6 +694,10 @@ def serve() -> int:
         log.info("another agent is already listening on 127.0.0.1:%s; exiting (pid %s)", paths.PORT, os.getpid())
         return 3
     agent.server = server
+    try:
+        atomic_write(paths.APP_DIR_FILE, paths.APP_DIR.encode("utf-8"))
+    except OSError:
+        pass
     atomic_write(paths.AGENT_FILE, json.dumps({"port": paths.PORT, "token": agent.token, "pid": os.getpid()}).encode())
     try:
         os.remove(paths.SPAWN_LOCK)  # launchers waiting on the spawn claim can connect now

@@ -3,6 +3,7 @@
 import ctypes
 import os
 import subprocess
+import threading
 from ctypes import wintypes as wt
 
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -61,9 +62,10 @@ CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 _jobs = []  # keep job handles alive for the life of this process
+_jobs_lock = threading.Lock()
 
 
-def kill_with_parent(proc: subprocess.Popen) -> None:
+def kill_with_parent(proc: subprocess.Popen):
     """Put `proc` in a job that is killed when this process exits for any reason."""
     job = _k32.CreateJobObjectW(None, None)
     if not job:
@@ -71,10 +73,26 @@ def kill_with_parent(proc: subprocess.Popen) -> None:
     info = _ExtendedLimit()
     info.BasicLimitInformation.LimitFlags = _KILL_ON_JOB_CLOSE
     if not _k32.SetInformationJobObject(job, _JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)):
+        _k32.CloseHandle(job)
         raise ctypes.WinError(ctypes.get_last_error())
     if not _k32.AssignProcessToJobObject(job, wt.HANDLE(int(proc._handle))):
+        _k32.CloseHandle(job)
         raise ctypes.WinError(ctypes.get_last_error())
-    _jobs.append(job)
+    with _jobs_lock:
+        _jobs.append(job)
+    return job
+
+
+def close_job(job) -> None:
+    """Close a job created by kill_with_parent, ending any remaining processes in it."""
+    if not job:
+        return
+    with _jobs_lock:
+        try:
+            _jobs.remove(job)
+        except ValueError:
+            return
+    _k32.CloseHandle(job)
 
 
 def pid_alive(pid: int) -> bool:

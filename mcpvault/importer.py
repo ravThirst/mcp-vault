@@ -6,9 +6,10 @@ import re
 
 from . import clients, model
 
-SECRET_NAME = re.compile(r"(?i)(pass|secret|token|apikey|api_key|_key$|credential|auth|cookie)")
+SECRET_NAME = re.compile(r"(?i)(pass|secret|token|apikey|api_key|_key$|credential|auth|cookie|_mcp_hosts$|_inventory$)")
 
-_WINDOWS_KEYS = ("WINDOWS_HOST", "WINDOWS_USERNAME", "WINDOWS_PASSWORD", "WINDOWS_MCP_TRANSPORT",
+_WINDOWS_KEYS = ("WINDOWS_MCP_HOSTS", "WINDOWS_MCP_HOSTS_FILE", "WINDOWS_HOST", "WINDOWS_HOST_NAME",
+                 "WINDOWS_USERNAME", "WINDOWS_PASSWORD", "WINDOWS_MCP_TRANSPORT",
                  "WINDOWS_SSH_PORT", "WINDOWS_WINRM_PORT", "WINDOWS_USE_SSL", "WINDOWS_SSH_KEY",
                  "WINDOWS_MCP_READONLY")
 _MIKROTIK_KEYS = ("MIKROTIK_HOST", "MIKROTIK_USERNAME", "MIKROTIK_PASSWORD", "MIKROTIK_PORT",
@@ -21,17 +22,69 @@ def _truthy(v) -> bool:
 
 
 def _windows(name: str, env: dict) -> tuple[list[dict], list[str]]:
+    warnings: list[str] = []
+    data = None
+    if env.get("WINDOWS_MCP_HOSTS"):
+        try:
+            data = json.loads(env["WINDOWS_MCP_HOSTS"])
+        except json.JSONDecodeError:
+            warnings.append("Could not parse WINDOWS_MCP_HOSTS as JSON; add hosts by hand")
+            data = []
+    elif env.get("WINDOWS_MCP_HOSTS_FILE"):
+        path = os.path.expanduser(env["WINDOWS_MCP_HOSTS_FILE"])
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                data = json.load(fh)
+            warnings.append(f"{path} still holds plaintext credentials; delete it once the vault works")
+        except (OSError, json.JSONDecodeError):
+            warnings.append(f"Could not read the host inventory {path}; add hosts by hand")
+            data = []
+    if data is not None:
+        if isinstance(data, dict):
+            data = data.get("hosts", [])
+        hosts = []
+        default_ro = _truthy(env.get("WINDOWS_MCP_READONLY", ""))
+        default_proto = (env.get("WINDOWS_MCP_TRANSPORT") or "winrm").lower()
+        for it in (data if isinstance(data, list) else []):
+            if not isinstance(it, dict):
+                continue
+            protocol = str(it.get("protocol") or default_proto).strip().lower()
+            if protocol not in ("ssh", "winrm", "agent"):
+                protocol = "winrm"
+            key = str(it.get("key_file") or "")
+            pw = str(it.get("password") or "")
+            hosts.append({
+                "name": it.get("name") or it.get("host") or name,
+                "kind": "windows",
+                "address": it.get("host", ""),
+                "port": it.get("port") or "",
+                "protocol": protocol,
+                "use_ssl": bool(it.get("use_ssl")),
+                "username": it.get("username", ""),
+                "auth": "key" if key and protocol == "ssh" and not pw else "password",
+                "key_path": key,
+                "password": pw,
+                "readonly": bool(it.get("readonly")) or default_ro,
+                "description": it.get("description", ""),
+            })
+        return hosts, warnings
+
+    if not env.get("WINDOWS_HOST"):
+        warnings.append("No WINDOWS_MCP_HOSTS or WINDOWS_HOST found; add its Windows host(s) in the vault")
+        return [], warnings
     protocol = (env.get("WINDOWS_MCP_TRANSPORT") or "winrm").lower()
+    if protocol not in ("ssh", "winrm", "agent"):
+        protocol = "winrm"
     use_ssl = _truthy(env.get("WINDOWS_USE_SSL", ""))
     port = env.get("WINDOWS_SSH_PORT") if protocol == "ssh" else env.get("WINDOWS_WINRM_PORT")
     key = env.get("WINDOWS_SSH_KEY", "")
     host = {
-        "name": name, "kind": "windows", "address": env.get("WINDOWS_HOST", ""), "port": port or "",
-        "protocol": protocol, "use_ssl": use_ssl, "username": env.get("WINDOWS_USERNAME", ""),
+        "name": env.get("WINDOWS_HOST_NAME") or name, "kind": "windows", "address": env.get("WINDOWS_HOST", ""),
+        "port": port or "", "protocol": protocol, "use_ssl": use_ssl, "username": env.get("WINDOWS_USERNAME", ""),
         "auth": "key" if key and protocol == "ssh" else "password", "key_path": key,
         "password": env.get("WINDOWS_PASSWORD", ""), "readonly": _truthy(env.get("WINDOWS_MCP_READONLY", "")),
     }
-    return [host], []
+    return [host], warnings
 
 
 def _mikrotik(name: str, env: dict) -> tuple[list[dict], list[str]]:
@@ -71,7 +124,11 @@ def _ubuntu(name: str, env: dict, command: str, args: list) -> tuple[list[dict],
     warnings = []
     data = None
     if env.get("UBUNTU_MCP_HOSTS"):
-        data = json.loads(env["UBUNTU_MCP_HOSTS"])
+        try:
+            data = json.loads(env["UBUNTU_MCP_HOSTS"])
+        except json.JSONDecodeError:
+            warnings.append("Could not parse UBUNTU_MCP_HOSTS as JSON; add hosts by hand")
+            data = []
     else:
         path = env.get("UBUNTU_MCP_HOSTS_FILE")
         if not path:
@@ -100,10 +157,15 @@ def _ubuntu(name: str, env: dict, command: str, args: list) -> tuple[list[dict],
     return hosts, warnings
 
 
+def _looks_like_windows_mcp(haystack: str) -> bool:
+    return "windows-mcp" in haystack or "windows_mcp" in haystack
+
+
 def _analyse(name: str, entry: dict) -> dict:
     command = str(entry.get("command", ""))
     args = [str(a) for a in entry.get("args") or []]
-    env = {str(k): str(v) for k, v in (entry.get("env") or {}).items()}
+    raw_env = entry.get("env")
+    env = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
     prop = {"id": name, "template": "generic", "command": command, "args": args, "cwd": entry.get("cwd", ""),
             "hosts": [], "env": {}, "secret_env": {}, "warnings": [], "supported": True}
 
@@ -112,9 +174,10 @@ def _analyse(name: str, entry: dict) -> dict:
         prop["warnings"].append("Remote (URL) servers are not managed by the vault yet")
         return prop
 
-    haystack = " ".join([command, *args]).lower()
+    haystack = " ".join([command, *args]).lower().replace("\\", "/")
     consumed: tuple = ()
-    if "WINDOWS_HOST" in env:
+    if ("WINDOWS_MCP_HOSTS" in env or "WINDOWS_MCP_HOSTS_FILE" in env
+            or _looks_like_windows_mcp(haystack)):
         prop["template"], consumed = "windows-mcp", _WINDOWS_KEYS
         prop["hosts"], w = _windows(name, env)
     elif any(k in env for k in _MIKROTIK_KEYS) or "mikrotik" in haystack:
@@ -125,6 +188,8 @@ def _analyse(name: str, entry: dict) -> dict:
         prop["hosts"], w = _ubuntu(name, env, command, args)
     else:
         w = []
+        if "WINDOWS_HOST" in env:
+            w.append("Uses WINDOWS_HOST, but command does not look like windows-mcp; imported as generic")
     prop["warnings"] += w
 
     for k, v in env.items():
@@ -151,11 +216,14 @@ def scan(data: dict) -> dict:
                 found.setdefault(name, {})[cid] = entry
 
     existing_ids = {s["id"] for s in data["servers"]}
+    installed = clients.installed_clients()
     proposals = []
     for name, entries in found.items():
         primary = entries.get("claude-code") or next(iter(entries.values()))
         prop = _analyse(name, primary)
-        prop["clients"] = list(entries)
+        found_in = list(entries)
+        prop["found_in"] = found_in
+        prop["clients"] = list(dict.fromkeys([*found_in, *installed]))
         if len({json.dumps(e, sort_keys=True) for e in entries.values()}) > 1:
             prop["warnings"].append(f"Configured differently across apps ({', '.join(sorted(entries))}); "
                                     "the first listed version is used")

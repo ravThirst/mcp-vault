@@ -54,9 +54,14 @@
             if (Test-Path $py) { try { & $py (Join-Path $dir 'vault.py') stop | Out-Null } catch { } }
             # Replace the code folders wholesale so files removed upstream disappear;
             # .venv, NOTES-local.md and anything else of yours stays.
-            foreach ($d in 'mcpvault', 'skills') {
+            foreach ($d in 'mcpvault', 'skills', 'servers') {
                 $p = Join-Path $dir $d
                 if (Test-Path $p) { Remove-Item $p -Recurse -Force }
+            }
+            # Refresh shipped agent scripts while preserving any local agent.key/log.
+            $agentDir = Join-Path $dir 'agent'
+            if (Test-Path $agentDir) {
+                Get-ChildItem $agentDir -File | Where-Object { $_.Extension -in '.ps1', '.bat', '.md' } | Remove-Item -Force
             }
         }
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -74,13 +79,17 @@
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # Keep installed agent skills in step with the new version.
-    $skills = Join-Path $HOME '.claude\skills\mcp-vault\SKILL.md'
-    $kimiSkills = Join-Path $env:APPDATA 'kimi-desktop\daimon-share\daimon\skills\mcp-vault\SKILL.md'
+    # Pre-refresh agent skills on updates when .venv already exists so setup won't prompt again.
     $py = Join-Path $dir '.venv\Scripts\python.exe'
-    if ($updating -and ((Test-Path $skills) -or (Test-Path $kimiSkills)) -and (Test-Path $py)) {
-        & $py (Join-Path $dir 'vault.py') install-skills --force | Out-Null
-        Say 'Updated the agent skills.'
+    if ($updating -and (Test-Path $py)) {
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $py (Join-Path $dir 'vault.py') install-skills --force *> $null
+            $global:LASTEXITCODE = 0
+        } catch { } finally {
+            $ErrorActionPreference = $prevEap
+        }
     }
 
     Say 'Files are in place. Running setup (Python check, dependencies, shortcuts) ...' 'Green'
@@ -94,6 +103,19 @@
     if ($setup.ExitCode -ne 0) {
         Say "Setup did not finish. Fix the problem above, then run: `"$bat`" setup" 'Yellow'
         return
+    }
+
+    # Ensure agent skills (and app_dir.txt) are installed on both fresh installs and updates.
+    if (Test-Path $py) {
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $py (Join-Path $dir 'vault.py') install-skills --force *> $null
+            if ($LASTEXITCODE -eq 0) { Say 'Installed/updated the agent skills.' }
+            $global:LASTEXITCODE = 0
+        } catch { } finally {
+            $ErrorActionPreference = $prevEap
+        }
     }
 
     Write-Host ''

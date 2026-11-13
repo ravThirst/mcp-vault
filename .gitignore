@@ -18,3 +18,13 @@ agent.spawn
 *.enc
 logs/
 backups/
+
+# Runtime state if winmcp-agent.ps1 is ever started directly from agent/
+agent/agent.key
+agent/agent.log
+agent/agent.pid
+
+# Never commit local plaintext host inventories or env files inside bundled servers
+servers/**/hosts.json
+.env
+servers/**/.env

@@ -12,6 +12,7 @@ STATIC_DIR = os.path.join(APP_DIR, "mcpvault", "static")
 DATA_DIR = os.environ.get("MCPVAULT_HOME") or os.path.join(
     os.environ.get("APPDATA") or os.path.expanduser("~"), "mcp-vault"
 )
+APP_DIR_FILE = os.path.join(DATA_DIR, "app_dir.txt")
 VAULT_FILE = os.path.join(DATA_DIR, "vault.json")
 AGENT_FILE = os.path.join(DATA_DIR, "agent.json")
 AGENT_LOG = os.path.join(DATA_DIR, "agent.log")
@@ -34,6 +35,19 @@ KIMI_PLUGIN_ID = "mcp-vault"
 KIMI_PLUGIN_DIR = os.path.join(KIMI_HOME, "plugins", "managed", KIMI_PLUGIN_ID)
 KIMI_MANIFEST = os.path.join(KIMI_PLUGIN_DIR, "kimi.plugin.json")
 KIMI_INSTALLED = os.path.join(KIMI_HOME, "plugins", "installed.json")
+
+# Codex: MCP servers live in [mcp_servers.<id>] tables in ~/.codex/config.toml.
+CODEX_HOME = os.environ.get("MCPVAULT_CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+CODEX_CONFIG = os.environ.get("MCPVAULT_CODEX_CONFIG") or os.path.join(CODEX_HOME, "config.toml")
+CODEX_SKILLS_DIR = os.environ.get("MCPVAULT_CODEX_SKILLS") or os.path.join(CODEX_HOME, "skills")
+
+# Antigravity: MCP servers live in ~/.gemini/config/mcp_config.json.
+ANTIGRAVITY_HOME = os.environ.get("MCPVAULT_ANTIGRAVITY_HOME") or os.path.join(
+    os.path.expanduser("~"), ".gemini", "config")
+ANTIGRAVITY_CONFIG = os.environ.get("MCPVAULT_ANTIGRAVITY_CONFIG") or os.path.join(
+    ANTIGRAVITY_HOME, "mcp_config.json")
+ANTIGRAVITY_SKILLS_DIR = os.environ.get("MCPVAULT_ANTIGRAVITY_SKILLS") or os.path.join(
+    ANTIGRAVITY_HOME, "skills")
 
 _VENV_SCRIPTS = os.path.join(APP_DIR, ".venv", "Scripts")
 

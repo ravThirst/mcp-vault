@@ -1,4 +1,4 @@
-"""MCP client config files (Claude Code, Claude Desktop, Kimi Work).
+"""MCP client config files (Claude Code, Claude Desktop, Kimi Work, Codex, Antigravity).
 
 The vault writes one launcher entry per server into each selected client:
 
@@ -10,6 +10,10 @@ with "run"; everything else in the file is left untouched.
 Kimi Work loads MCP servers from plugins: the vault maintains a `mcp-vault`
 plugin whose `kimi.plugin.json` manifest holds the launcher entries, and
 registers that plugin in `plugins/installed.json` on apply.
+
+Codex stores settings in TOML (`~/.codex/config.toml`) under `[mcp_servers.<id>]`;
+apply updates only vault-managed and selected server tables, leaving every other
+setting and comment intact.
 """
 
 import datetime as _dt
@@ -40,6 +44,18 @@ CLIENTS = {
         "typed": False,
         "reload": "Restart Kimi Work, or toggle the mcp-vault plugin off and on in its settings.",
     },
+    "codex": {
+        "label": "Codex",
+        "path": paths.CODEX_CONFIG,
+        "typed": False,
+        "reload": "Restart Codex (only needed when adding or removing servers; host changes apply automatically).",
+    },
+    "antigravity": {
+        "label": "Antigravity",
+        "path": paths.ANTIGRAVITY_CONFIG,
+        "typed": False,
+        "reload": "Reload Antigravity (only needed when adding or removing servers; host changes apply automatically).",
+    },
 }
 
 
@@ -47,21 +63,303 @@ def _norm(path: str) -> str:
     return os.path.normcase(os.path.normpath(path))
 
 
-def launcher_entry(server_id: str, typed: bool) -> dict:
+def launcher_entry(server_id: str, typed: bool, client_id: str = "") -> dict:
+    if client_id == "codex":
+        return {
+            "command": paths.python_console(),
+            "args": [paths.ENTRY, "run", server_id],
+            "startup_timeout_sec": 60,
+            "tool_timeout_sec": 240,
+            "enabled": True,
+        }
     entry = {"command": paths.python_console(), "args": [paths.ENTRY, "run", server_id], "env": {}}
     return {"type": "stdio", **entry} if typed else entry
 
 
 def is_managed(entry: dict) -> bool:
-    args = entry.get("args") or []
-    return any(isinstance(a, str) and _norm(a) == _norm(paths.ENTRY) for a in args) and "run" in args
+    if not isinstance(entry, dict):
+        return False
+    args = [a for a in (entry.get("args") or []) if isinstance(a, str)]
+    for i, arg in enumerate(args):
+        norm = _norm(arg)
+        if norm == _norm(paths.ENTRY) and "run" in args:
+            return True
+        if os.path.basename(norm) == "vault.py" and i + 2 < len(args) and args[i + 1] == "run" and bool(args[i + 2].strip()):
+            return True
+    return False
+
+
+# -- Codex TOML helpers -------------------------------------------------------
+
+_TABLE_RE = re.compile(r"^\s*(\[\[?)([^\[\]]+)(\]\]?)\s*(?:#.*)?$")
+_KEYVAL_RE = re.compile(r"^\s*([A-Za-z0-9_-]+|\"(?:\\.|[^\"])*\"|'[^']*')\s*=\s*(.+?)\s*$")
+
+
+def _loads_toml(raw: str) -> dict:
+    try:
+        import tomllib
+
+        return tomllib.loads(raw)
+    except ModuleNotFoundError:
+        return _loads_toml_fallback(raw)
+
+
+def _strip_toml_comment(line: str) -> str:
+    quote: str | None = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote is None:
+            if ch == "#":
+                return line[:i]
+            if ch in ('"', "'"):
+                quote = ch
+        else:
+            if quote == '"' and ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        i += 1
+    return line
+
+
+def _split_toml_top(text: str, sep: str) -> list[str]:
+    parts: list[str] = []
+    cur: list[str] = []
+    quote: str | None = None
+    depth = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote is None:
+            if ch in ('"', "'"):
+                quote = ch
+            elif ch in "{[":
+                depth += 1
+            elif ch in "}]" and depth > 0:
+                depth -= 1
+            elif ch == sep and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+                i += 1
+                continue
+        else:
+            if quote == '"' and ch == "\\":
+                cur.append(text[i:i + 2])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        cur.append(ch)
+        i += 1
+    parts.append("".join(cur))
+    return parts
+
+
+def _unquote_toml_key(raw_key: str) -> str:
+    k = raw_key.strip()
+    if k.startswith('"') and k.endswith('"') and len(k) >= 2:
+        return json.loads(k)
+    if k.startswith("'") and k.endswith("'") and len(k) >= 2:
+        return k[1:-1]
+    return k
+
+
+def _parse_toml_inline_table(body: str) -> dict:
+    out: dict = {}
+    for item in _split_toml_top(body, ","):
+        piece = item.strip()
+        if not piece:
+            continue
+        kv = _split_toml_top(piece, "=")
+        if len(kv) < 2:
+            continue
+        raw_key = kv[0].strip()
+        raw_val = "=".join(kv[1:]).strip()
+        keys = [_unquote_toml_key(part) for part in _split_toml_top(raw_key, ".")]
+        target = out
+        for sub in keys[:-1]:
+            nxt = target.get(sub)
+            if not isinstance(nxt, dict):
+                nxt = {}
+                target[sub] = nxt
+            target = nxt
+        target[keys[-1]] = _parse_toml_scalar(raw_val)
+    return out
+
+
+def _loads_toml_fallback(raw: str) -> dict:
+    """Minimal fallback for Python 3.10 (reads [mcp_servers.<id>] sections)."""
+    servers: dict[str, dict] = {}
+    cur: tuple[str, str | None] | None = None
+    for raw_line in raw.splitlines():
+        line = _strip_toml_comment(raw_line).strip()
+        if not line:
+            continue
+        m = _TABLE_RE.match(line)
+        if m and m.group(1) == "[":
+            cur = _mcp_server_header(m.group(2).strip())
+            if cur and cur[1] is None:
+                servers.setdefault(cur[0], {})
+            continue
+        if not cur:
+            continue
+        km = _KEYVAL_RE.match(line)
+        if not km:
+            continue
+        k = _unquote_toml_key(km.group(1))
+        v = km.group(2).strip()
+        val = _parse_toml_scalar(v)
+        srv = servers.setdefault(cur[0], {})
+        if cur[1] == "env":
+            srv.setdefault("env", {})[k] = val
+        elif cur[1] is None:
+            srv[k] = val
+    return {"mcp_servers": servers}
+
+
+def _parse_toml_scalar(v: str):
+    v = v.strip()
+    if v in ("true", "false"):
+        return v == "true"
+    if v.startswith("{") and v.endswith("}"):
+        return _parse_toml_inline_table(v[1:-1])
+    if v.startswith("[") and v.endswith("]"):
+        inner = v[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_toml_scalar(p) for p in _split_toml_top(inner, ",") if p.strip()]
+    if v.startswith("'") and v.endswith("'") and len(v) >= 2:
+        return v[1:-1]
+    try:
+        return json.loads(v)
+    except ValueError:
+        if v.startswith('"') and v.endswith('"') and len(v) >= 2:
+            return v[1:-1]
+        return v
+
+
+def _mcp_server_header(header: str) -> tuple[str, str | None] | None:
+    """If `header` is `mcp_servers.<name>[.<sub>]`, return `(name, sub)`."""
+    if not header.startswith("mcp_servers."):
+        return None
+    rest = header[len("mcp_servers."):].strip()
+    if not rest:
+        return None
+    if rest[0] in ('"', "'"):
+        q = rest[0]
+        end = rest.find(q, 1)
+        while end > 0 and q == '"' and rest[end - 1] == "\\":
+            end = rest.find(q, end + 1)
+        if end < 0:
+            return None
+        name = json.loads(rest[:end + 1]) if q == '"' else rest[1:end]
+        tail = rest[end + 1:].strip()
+        sub = tail[1:].strip() if tail.startswith(".") else None
+        return name, sub
+    name, _, sub = rest.partition(".")
+    return name.strip(), (sub.strip() or None)
+
+
+def _update_multiline_quote(line: str, quote: str | None) -> str | None:
+    i = 0
+    while i < len(line):
+        if quote is None:
+            if line[i] == "#":
+                break
+            if line.startswith('"""', i) or line.startswith("'''", i):
+                quote = line[i:i + 3]
+                i += 3
+                continue
+            if line[i] in ('"', "'"):
+                q = line[i]
+                i += 1
+                while i < len(line):
+                    if q == '"' and line[i] == "\\":
+                        i += 2
+                        continue
+                    if line[i] == q:
+                        i += 1
+                        break
+                    i += 1
+                continue
+        else:
+            if quote == '"""' and line[i] == "\\":
+                i += 2
+                continue
+            if line.startswith(quote, i):
+                quote = None
+                i += 3
+                continue
+        i += 1
+    return quote
+
+
+def _write_codex(raw: str | None, current: dict, desired: dict) -> str:
+    touched = {n for n, e in current.items() if isinstance(e, dict) and is_managed(e)} | set(desired)
+    kept: list[str] = []
+    skip = False
+    quote: str | None = None
+    for line in (raw or "").splitlines(keepends=True):
+        if quote is None:
+            m = _TABLE_RE.match(line)
+            if m:
+                parsed = _mcp_server_header(m.group(2).strip()) if m.group(1) == "[" else None
+                skip = bool(parsed and parsed[0] in touched)
+        quote = _update_multiline_quote(line, quote)
+        if not skip:
+            kept.append(line)
+
+    blocks = []
+    for name, entry in desired.items():
+        key = name if re.match(r"^[A-Za-z0-9_-]+$", name) else json.dumps(name, ensure_ascii=False)
+        args_toml = ", ".join(json.dumps(a, ensure_ascii=False) for a in entry["args"])
+        blocks.append(
+            f"[mcp_servers.{key}]\n"
+            f"command = {json.dumps(entry['command'], ensure_ascii=False)}\n"
+            f"args = [{args_toml}]\n"
+            f"startup_timeout_sec = {entry['startup_timeout_sec']}\n"
+            f"tool_timeout_sec = {entry['tool_timeout_sec']}\n"
+            f"enabled = {'true' if entry['enabled'] else 'false'}"
+        )
+    parts = [p for p in ["".join(kept).rstrip(), *blocks] if p]
+    out = ("\n\n".join(parts) + "\n") if parts else ""
+    _loads_toml(out)  # verify valid TOML before touching disk
+    return out
 
 
 # -- Kimi Work plugin ---------------------------------------------------------
 
 def kimi_available() -> bool:
-    """True when a Kimi Work plugins folder is present on this machine."""
-    return os.path.isdir(os.path.join(paths.KIMI_HOME, "plugins"))
+    """True when a Kimi Work installation (plugins or daimon folder) is present on this machine."""
+    return (
+        os.path.isdir(os.path.join(paths.KIMI_HOME, "plugins"))
+        or os.path.isdir(os.path.dirname(paths.KIMI_SKILLS_DIR))
+        or os.path.isdir(paths.KIMI_SKILLS_DIR)
+    )
+
+
+def installed_clients() -> list[str]:
+    """Client IDs whose application folder or config file exists on this machine."""
+    home = os.path.expanduser("~")
+    found: list[str] = []
+    if os.path.isdir(os.path.join(home, ".claude")) or os.path.isfile(CLIENTS["claude-code"]["path"]):
+        found.append("claude-code")
+    desktop_cfg = CLIENTS["claude-desktop"]["path"]
+    if os.path.isdir(os.path.dirname(desktop_cfg)) or os.path.isfile(desktop_cfg):
+        found.append("claude-desktop")
+    if kimi_available():
+        found.append("kimi")
+    if os.path.isdir(paths.CODEX_HOME) or os.path.isfile(paths.CODEX_CONFIG):
+        found.append("codex")
+    if (
+        os.path.isdir(paths.ANTIGRAVITY_HOME)
+        or os.path.isdir(os.path.join(home, ".gemini", "antigravity"))
+        or os.path.isfile(paths.ANTIGRAVITY_CONFIG)
+    ):
+        found.append("antigravity")
+    return found
 
 
 def _kimi_scaffold() -> dict:
@@ -118,6 +416,10 @@ def read_config(client_id: str) -> tuple[dict, str | None]:
         raw = fh.read()
     if not raw.strip():
         return {}, raw
+    if client_id == "codex":
+        obj = _loads_toml(raw)
+        servers = {k: v for k, v in (obj.get("mcp_servers") or {}).items() if isinstance(v, dict)}
+        return {"mcpServers": servers}, raw
     obj = json.loads(raw)
     if not isinstance(obj, dict):
         raise ValueError(f"{path} does not contain a JSON object")
@@ -126,7 +428,8 @@ def read_config(client_id: str) -> tuple[dict, str | None]:
 
 def _desired(servers: list[dict], client_id: str) -> dict:
     typed = CLIENTS[client_id]["typed"]
-    return {s["id"]: launcher_entry(s["id"], typed) for s in servers if s.get("enabled", True) and client_id in s.get("clients", [])}
+    return {s["id"]: launcher_entry(s["id"], typed, client_id)
+            for s in servers if s.get("enabled", True) and client_id in s.get("clients", [])}
 
 
 def plan(servers: list[dict]) -> list[dict]:
@@ -182,6 +485,12 @@ def apply(vault, servers: list[dict], client_ids: list[str]) -> list[dict]:
             cfg, raw = read_config(cid)
             if raw is not None:
                 backup(vault, cid, raw)
+            desired = _desired(servers, cid)
+            if cid == "codex":
+                out_text = _write_codex(raw, cfg.get("mcpServers") or {}, desired)
+                atomic_write(info["path"], out_text.encode("utf-8"))
+                results.append({"client": cid, "ok": True, "reload": info["reload"]})
+                continue
             if cid == "kimi":
                 base = _kimi_scaffold()
                 base.update({k: v for k, v in cfg.items() if k != "mcpServers"})
@@ -189,7 +498,6 @@ def apply(vault, servers: list[dict], client_ids: list[str]) -> list[dict]:
                 cfg = base
                 os.makedirs(paths.KIMI_PLUGIN_DIR, exist_ok=True)
             current = dict(cfg.get("mcpServers") or {})
-            desired = _desired(servers, cid)
             for name in [n for n, e in current.items() if is_managed(e) and n not in desired]:
                 del current[name]
             current.update(desired)

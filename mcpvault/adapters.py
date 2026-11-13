@@ -4,19 +4,23 @@ Each template knows which host kinds it accepts and produces the environment
 variables that server already understands, so the servers need no changes.
 """
 
+import copy
 import json
+import os
+
+from . import paths
 
 TEMPLATES = {
     "windows-mcp": {
         "label": "windows-mcp",
-        "description": "One or more Windows machines over SSH or WinRM (WINDOWS_MCP_HOSTS; windows-mcp 2.0+ for several).",
+        "description": "One or more Windows machines over SSH, WinRM or the WinMCP agent (WINDOWS_MCP_HOSTS; bundled in servers/windows-mcp).",
         "kinds": ["windows"],
         "min_hosts": 1,
         "max_hosts": None,
     },
     "ubuntu-mcp": {
         "label": "ubuntu-mcp",
-        "description": "One or more Linux hosts over SSH (UBUNTU_MCP_HOSTS).",
+        "description": "One or more Linux hosts over SSH (UBUNTU_MCP_HOSTS; bundled in servers/ubuntu-mcp).",
         "kinds": ["linux"],
         "min_hosts": 1,
         "max_hosts": None,
@@ -46,8 +50,36 @@ TEMPLATES = {
 }
 
 
+def bundled_server_entry(template: str) -> str | None:
+    """Path to a bundled server's entry script under servers/<template>, if present."""
+    if template not in ("windows-mcp", "ubuntu-mcp"):
+        return None
+    base = os.path.join(paths.APP_DIR, "servers", template)
+    for rel in (os.path.join("src", "server.py"), "server.py"):
+        candidate = os.path.join(base, rel)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def template_meta() -> dict:
+    """TEMPLATES enriched with bundled default_command/default_args/default_cwd when on disk."""
+    out = copy.deepcopy(TEMPLATES)
+    for key in ("windows-mcp", "ubuntu-mcp"):
+        entry = bundled_server_entry(key)
+        if entry and key in out:
+            out[key]["default_command"] = paths.python_console()
+            out[key]["default_args"] = [entry]
+            out[key]["default_cwd"] = os.path.join(paths.APP_DIR, "servers", key)
+    return out
+
+
 class ResolveError(Exception):
     pass
+
+
+class StandbyError(ResolveError):
+    """The server is configured, but all of its hosts are currently disabled."""
 
 
 def _windows(hosts: list[dict], _server: dict) -> dict:
@@ -57,13 +89,15 @@ def _windows(hosts: list[dict], _server: dict) -> dict:
         if h.get("use_ssl"):
             item["use_ssl"] = True
     env = {"WINDOWS_MCP_HOSTS": json.dumps({"hosts": items}, ensure_ascii=False)}
-    if len(hosts) == 1:
+    if len(hosts) == 1 and hosts[0]["protocol"] != "agent":
         # Also the original single-host variables, for windows-mcp versions before 2.0.
         env.update(_windows_legacy(hosts[0]))
     return env
 
 
 def _windows_legacy(h: dict) -> dict:
+    if h.get("protocol") == "agent":
+        return {}
     env = {
         "WINDOWS_HOST": h["address"],
         "WINDOWS_USERNAME": h["username"],
@@ -154,7 +188,7 @@ def resolve(server: dict, hosts_by_id: dict) -> tuple[dict, list[str]]:
     disabled = [h["name"] for h in hosts if not h.get("enabled", True)]
     hosts = [h for h in hosts if h.get("enabled", True)]
     if len(hosts) < template["min_hosts"]:
-        raise ResolveError(f"server {server['id']!r} cannot start: its host(s) {', '.join(disabled)} "
+        raise StandbyError(f"server {server['id']!r} cannot start: its host(s) {', '.join(disabled)} "
                            "are disabled in MCP Vault. Enable a host to use it again.")
 
     env: dict[str, str] = {}

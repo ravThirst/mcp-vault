@@ -14,7 +14,7 @@ if /i "%~1"=="setup" goto :setup
 
 rem ---- fast path: environment already works ------------------------------
 if not exist "%VPY%" goto :setup
-"%VPY%" -c "import cryptography, paramiko" >nul 2>&1
+"%VPY%" -c "import cryptography, paramiko, mcp, winrm" >nul 2>&1
 if errorlevel 1 goto :setup
 goto :launch
 
@@ -54,10 +54,10 @@ echo  Creating the app environment in .venv ...
 if errorlevel 1 goto :fail
 
 :install
-echo  Installing dependencies (cryptography, paramiko) ...
+echo  Installing dependencies (cryptography, paramiko, mcp, pywinrm) ...
 "%VPY%" -m pip install --disable-pip-version-check --quiet -r "%APP%requirements.txt"
 if errorlevel 1 goto :fail
-"%VPY%" -c "import cryptography, paramiko" >nul 2>&1
+"%VPY%" -c "import cryptography, paramiko, mcp, winrm" >nul 2>&1
 if errorlevel 1 goto :fail
 echo  Dependencies OK.
 
@@ -76,10 +76,13 @@ if errorlevel 2 goto :skills
 rem Offer the skills only where a supported client is installed and they are missing.
 set "SKILLS_NEEDED="
 if exist "%USERPROFILE%\.claude" if not exist "%USERPROFILE%\.claude\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
-if exist "%APPDATA%\kimi-desktop\daimon-share\daimon\skills" if not exist "%APPDATA%\kimi-desktop\daimon-share\daimon\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
+if exist "%APPDATA%\kimi-desktop\daimon-share\daimon" if not exist "%APPDATA%\kimi-desktop\daimon-share\daimon\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
+if exist "%USERPROFILE%\.codex" if not exist "%USERPROFILE%\.codex\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
+if exist "%USERPROFILE%\.gemini\antigravity" if not exist "%USERPROFILE%\.gemini\config\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
+if exist "%USERPROFILE%\.gemini\config" if not exist "%USERPROFILE%\.gemini\config\skills\mcp-vault\SKILL.md" set "SKILLS_NEEDED=1"
 if not defined SKILLS_NEEDED goto :launch
 echo.
-choice /c YN /n /m " Install the MCP Vault skills for Claude Code / Kimi Work? [Y/N] "
+choice /c YN /n /m " Install the MCP Vault skills for installed AI clients? [Y/N] "
 if errorlevel 2 goto :launch
 "%VPY%" "%APP%vault.py" install-skills
 

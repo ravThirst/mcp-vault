@@ -1,6 +1,6 @@
 ---
 name: mcp-server-builder
-description: Build a new MCP server, or bring an existing one up to standard, following the house SERVER-SPEC, then register it in MCP Vault so its hosts and credentials live in the encrypted vault. Use this whenever the user wants to create, write or scaffold an MCP server or MCP tools for some system (a device, router, hypervisor, NAS, API, app, database, service), wrap a CLI or REST API as MCP tools, add tools to one of their servers in ~/.mcp-servers, or make a server "follow the spec / standard". Also use it for "let Claude control X" or "I want an MCP for X", even when MCP isn't named, as long as the result is a new tool server.
+description: Build a new MCP server, or bring an existing one up to standard, following the house SERVER-SPEC, then register it in MCP Vault so its hosts and credentials live in the encrypted vault. Use this whenever the user wants to create, write or scaffold an MCP server or MCP tools for some system (a device, router, hypervisor, NAS, API, app, database, service), wrap a CLI or REST API as MCP tools, add tools to one of their servers in ~/.mcp-servers, or make a server "follow the spec / standard". Also use it for "let Claude / Codex / Antigravity control X" or "I want an MCP for X", even when MCP isn't named, as long as the result is a new tool server.
 ---
 
 # MCP server builder
@@ -11,11 +11,12 @@ same first tools to call when debugging. Then any server can be managed, tested
 and troubleshot with one routine (the `mcp-vault` skill), and a new one costs an
 hour instead of a day.
 
-The rules come from `SERVER-SPEC.md` in the MCP Vault folder
-(`~\.mcp-servers\mcp-vault\SERVER-SPEC.md`); read it if anything below is unclear.
-This skill's `template/` folder is the reference implementation; servers the
-user already built to the spec (look in `~\.mcp-servers`) are good examples of
-their own style.
+The rules come from `SERVER-SPEC.md` in the MCP Vault folder (read its path from
+`%APPDATA%\mcp-vault\app_dir.txt`, or default `~\.mcp-servers\mcp-vault\SERVER-SPEC.md`);
+read it if anything below is unclear. This skill's `template/` folder is the
+reference implementation, and the bundled `<APP_DIR>\servers\windows-mcp` and
+`<APP_DIR>\servers\ubuntu-mcp` (plus any custom servers in `~\.mcp-servers`) are
+complete production examples of the house style.
 
 ## 1. Pin down the server before writing code
 
@@ -86,11 +87,11 @@ instead of guessing.
 .venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'src'); import server"
 ```
 
-An import error here would otherwise surface as a cryptic "connection closed" in Claude.
+An import error here would otherwise surface as a cryptic "connection closed" in the MCP client (Claude, Codex, Antigravity, Kimi Work).
 
 ## 5. Register in MCP Vault and test
 
-Use the `mcp-vault` skill's CLI (`$V = "$HOME\.mcp-servers\mcp-vault"`; `& "$V\.venv\Scripts\python.exe" "$V\vault.py" ...`):
+Use the `mcp-vault` skill's CLI (`$V = if (Test-Path "$env:APPDATA\mcp-vault\app_dir.txt") { (Get-Content "$env:APPDATA\mcp-vault\app_dir.txt" -Raw).Trim() } else { "$HOME\.mcp-servers\mcp-vault" }`; `& "$V\.venv\Scripts\python.exe" "$V\vault.py" ...`):
 
 ```powershell
 vault.py list                                    # reuse existing hosts where possible
@@ -104,24 +105,25 @@ Then:
 1. Tell the user to enter passwords or tokens for new hosts in **MCP Vault → Hosts → Edit**
    (never in chat).
 2. `vault.py test server <name>` must say OK, with **annotated N/N**,
-   **instructions: yes**, and no stdout warning. Fix and re-test until it does.
+   **instructions: yes**, no compatibility warnings, and no stdout warning. Fix and re-test until it does.
 3. `vault.py apply --dry-run`, show the user, `vault.py apply` after a yes.
-4. Ask the user to reconnect (`/mcp` in Claude Code, or a new session), then call
-   `<prefix>_test_connection` yourself as the end-to-end check.
+4. Ask the user to reload their client (`/mcp` in Claude Code, restart Claude Desktop / Codex,
+   reload Antigravity, or restart Kimi Work), then call `<prefix>_test_connection` yourself
+   as the end-to-end check.
 
 ## Bringing an existing server up to spec
 
-Run `vault.py test server <name>` first. It reports annotations, instructions and
-stdout noise. Then go through the rules table: usually it needs annotations, a
-`_test_connection` tool, a read-only switch and, for multi-host servers, the
-inline inventory variable. Keep backwards compatibility (old env vars still
-work) unless the user says otherwise, then switch the vault entry to the
-`inventory` template and re-test.
+Run `vault.py test server <name>` first. It reports annotations, instructions,
+compatibility warnings and stdout noise. Then go through the rules table: usually
+it needs annotations, a `_test_connection` tool, a read-only switch and, for
+multi-host servers, the inline inventory variable. Keep backwards compatibility
+(old env vars still work) unless the user says otherwise, then switch the vault
+entry to the `inventory` template and re-test.
 
 ## Done means
 
 - [ ] Folder layout as above, `.venv` installed, import check passes
 - [ ] README config table matches the env vars; server.json declares them (`isSecret` on credentials)
 - [ ] Registered in the vault with no secrets in any file; user entered them in the UI
-- [ ] `vault.py test server` OK, all tools annotated, instructions present, no stdout noise
-- [ ] Applied, reconnected, `<prefix>_test_connection` succeeds from Claude
+- [ ] `vault.py test server` OK, all tools annotated, instructions present, no warnings or stdout noise
+- [ ] Applied, reconnected, `<prefix>_test_connection` succeeds from the client (Claude, Codex, Antigravity or Kimi Work)

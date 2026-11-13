@@ -5,7 +5,7 @@ import re
 import secrets as _secrets
 
 from . import adapters
-from .clients import CLIENTS
+from .clients import CLIENTS, installed_clients
 
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -57,8 +57,12 @@ def clean_host(p: dict, existing: dict | None) -> dict:
     allowed = ("ssh", "winrm", "agent") if kind == "windows" else ("ssh",)
     if protocol not in allowed:
         raise ValidationError("Protocol must be ssh, winrm or agent" if kind == "windows"
-                              else "Protocol must be ssh or winrm")
+                              else "Protocol must be ssh")
     use_ssl = bool(p.get("use_ssl")) and protocol == "winrm"
+
+    username = _text(p, "username")
+    if protocol != "agent" and not username:
+        raise ValidationError("Username is required")
 
     raw_port = _text(p, "port")
     try:
@@ -85,7 +89,7 @@ def clean_host(p: dict, existing: dict | None) -> dict:
         "port": port,
         "protocol": protocol,
         "use_ssl": use_ssl,
-        "username": _text(p, "username"),
+        "username": username,
         "auth": auth,
         "key_path": key_path,
         "readonly": bool(p.get("readonly")),
@@ -164,6 +168,10 @@ def clean_server(p: dict, existing: dict | None, hosts_by_id: dict) -> dict:
         if inventory_env in env or inventory_env in secret_env:
             raise ValidationError(f"{inventory_env} is filled from the hosts; remove it from the environment variables")
 
+    raw_clients = p.get("clients")
+    if raw_clients is None:
+        raw_clients = existing.get("clients", []) if existing is not None else (installed_clients() or list(CLIENTS))
+
     return {
         "id": sid,
         "description": _text(p, "description"),
@@ -175,7 +183,7 @@ def clean_server(p: dict, existing: dict | None, hosts_by_id: dict) -> dict:
         "env": env,
         "secret_env": secret_env,
         "hosts": host_ids,
-        "clients": [c for c in (p.get("clients") or []) if c in CLIENTS],
+        "clients": [c for c in raw_clients if c in CLIENTS],
         "enabled": bool(p.get("enabled", True)),
     }
 

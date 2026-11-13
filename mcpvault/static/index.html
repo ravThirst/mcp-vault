@@ -33,9 +33,10 @@ header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 16px; }
 .brand svg { color: var(--accent); }
 nav { display: flex; gap: 2px; flex-wrap: wrap; }
-nav button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+nav button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
 nav button:hover { background: var(--panel-2); color: var(--text); }
 nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+.nav-badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; font-size: 11.5px; line-height: 18px; font-weight: 650; text-align: center; background: var(--warn-bg); color: var(--warn); }
 .spacer { flex: 1; }
 main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
 h2 { font-size: 18px; margin: 0; }
@@ -69,7 +70,7 @@ h2 { font-size: 18px; margin: 0; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); flex: none; }
-.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.run { background: var(--info); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.run { background: var(--info); }
 .status { font-size: 12.5px; padding: 6px 9px; border-radius: 7px; background: var(--panel-2); color: var(--muted); overflow-wrap: anywhere; }
 .status.ok { background: var(--ok-bg); color: var(--ok); } .status.bad { background: var(--bad-bg); color: var(--bad); }
 .status.warn { background: var(--warn-bg); color: var(--warn); }
@@ -251,7 +252,9 @@ async function refresh() { S = await api("GET", "/api/data"); }
 
 function render() {
   const nav = $("#nav");
-  nav.replaceChildren(...TABS.map(([id, label]) => h("button", { class: id === tab ? "active" : "", onclick: () => go(id) }, label)));
+  nav.replaceChildren(...TABS.map(([id, label]) => h("button", { class: id === tab ? "active" : "", onclick: () => go(id) },
+    label,
+    id === "apps" && S.pending_apply > 0 ? h("span", { class: "nav-badge", title: `${S.pending_apply} unapplied change(s)` }, String(S.pending_apply)) : null)));
   const m = S.settings.auto_lock_minutes;
   $("#lock-info").textContent = m ? `Unlocked · auto-lock after ${m} min idle` : "Unlocked · no auto-lock";
   const view = $("#view");
@@ -298,7 +301,8 @@ function secretInput(isSet, revealFn, value = "") {
 function serverStatus(s) {
   const st = S.status.servers[s.id];
   const running = S.running[s.id] || 0;
-  return { st, running, dot: running ? "run" : st ? (st.ok ? "ok" : "bad") : "" };
+  const hasWarn = Boolean(st?.warnings?.length);
+  return { st, running, dot: running ? "run" : st ? (!st.ok ? "bad" : hasWarn ? "warn" : "ok") : "" };
 }
 
 function viewServers(view) {
@@ -327,14 +331,15 @@ function viewServers(view) {
         const x = hosts[hid];
         const off = x && x.enabled === false;
         return h("span", { class: "chip" + (off ? " is-disabled" : ""),
-          title: x ? `${x.username}@${x.address}:${x.port}${off ? " (disabled)" : ""}` : "" }, x ? x.name : "missing host");
+          title: x ? `${x.username ? x.username + "@" : ""}${x.address}:${x.port}${off ? " (disabled)" : ""}` : "" }, x ? x.name : "missing host");
       })) : null,
       tpl && tpl.min_hosts > 0 && s.hosts.filter((hid) => hosts[hid] && hosts[hid].enabled !== false).length < tpl.min_hosts
-        ? h("div", { class: "status warn" }, "Its hosts are disabled, so it won't start. Enable a host to use it again.") : null,
+        ? h("div", { class: "status warn" }, "Its hosts are disabled (standby). Enable a host to use it right away.") : null,
       h("div", { class: "small muted" },
         "Apps: ", s.clients.length ? s.clients.map((c) => S.meta.clients[c]?.label || c).join(", ") : "none",
         running ? ` · ${running} running` : ""),
-      st ? h("div", { class: "status " + (st.ok ? "ok" : "bad") }, `${st.time} · ${st.summary}`) : null,
+      st ? h("div", { class: "status " + (st.ok ? (st.warnings?.length ? "warn" : "ok") : "bad") }, `${st.time} · ${(st.summary || "").split(" — WARNING:")[0]}`) : null,
+      ...(st?.warnings || []).map((w) => h("div", { class: "status warn" }, w)),
       h("div", { class: "actions" },
         h("button", { class: "btn sm", onclick: (e) => testServer(s, e.target) }, "Test"),
         h("button", { class: "btn sm", onclick: () => showLogs(s) }, "Logs"),
@@ -371,7 +376,8 @@ function showTestResult(s, r) {
   if (r.tools) rows.push(["Tool annotations", `${r.annotated} of ${r.tools.length} tools declare read-only / destructive hints`]);
   if (r.has_instructions != null) rows.push(["Instructions", r.has_instructions ? "provided" : "none"]);
   openDialog(`Test: ${s.id}`, [
-    h("div", { class: "status " + (r.ok ? "ok" : "bad") }, r.summary),
+    h("div", { class: "status " + (r.ok ? (r.warnings?.length ? "warn" : "ok") : "bad") }, (r.summary || "").split(" — WARNING:")[0]),
+    ...(r.warnings || []).map((w) => h("div", { class: "status warn" }, w)),
     rows.length ? h("div", { class: "kv" }, rows.flat().map((x) => h("div", {}, x))) : null,
     r.tools?.length ? field("Tools", h("div", { class: "chips" }, r.tools.map((t) => h("span", { class: "chip" }, t)))) : null,
     r.stdout_noise ? h("div", { class: "status bad" }, "The server printed non-JSON text on stdout, which can break MCP clients: ", r.stdout_noise.join(" | ")) : null,
@@ -394,7 +400,8 @@ async function showLogs(s) {
 function editServer(s) {
   const isNew = !s;
   const sameTpl = (t) => S.servers.find((x) => x.template === t);
-  const v = s ? structuredClone(s) : { id: "", description: "", template: "generic", command: "", args: [], cwd: "", env: {}, secret_env: {}, hosts: [], clients: Object.keys(S.meta.clients), enabled: true };
+  const defaultClients = S.meta.installed_clients?.length ? S.meta.installed_clients : Object.keys(S.meta.clients);
+  const v = s ? structuredClone(s) : { id: "", description: "", template: "generic", command: "", args: [], cwd: "", env: {}, secret_env: {}, hosts: [], clients: [...defaultClients], enabled: true };
   const envRows = [
     ...Object.entries(v.env).map(([k, val]) => ({ key: k, orig: k, value: val, secret: false, keep: false })),
     ...Object.entries(v.secret_env).map(([k, isSet]) => ({ key: k, orig: k, value: "", secret: true, keep: true, unset: !isSet })),
@@ -438,7 +445,7 @@ function editServer(s) {
       const cb = h("input", { type: t.max_hosts === 1 ? "radio" : "checkbox", name: "srv-host", checked: selectedHosts.has(x.id),
         onchange: () => { if (t.max_hosts === 1) selectedHosts = new Set([x.id]); else cb.checked ? selectedHosts.add(x.id) : selectedHosts.delete(x.id); } });
       const label = h("span", { class: off ? "is-disabled" : "" }, h("b", {}, x.name),
-        h("span", { class: "muted mono small" }, `  ${x.username}@${x.address}:${x.port}`),
+        h("span", { class: "muted mono small" }, `  ${x.username ? x.username + "@" : ""}${x.address}:${x.port}`),
         off ? h("span", { class: "badge", style: "margin-left:6px" }, "disabled") : null);
       return h("div", { class: "host-item" }, check(label, cb),
         h("button", { class: "btn sm", type: "button", title: off ? "Give this host to its servers again" : "Keep the host, but stop giving it to servers",
@@ -451,10 +458,21 @@ function editServer(s) {
     hostBox.replaceChildren(...(rows.length ? rows
       : [h("div", { class: "muted small" }, `No ${t.kinds.map((k) => S.meta.kinds[k]).join("/")} hosts yet.`)]), add);
   }
+  let autoFilled = isNew;
+  [cmdIn, argsIn, cwdIn].forEach((el) => el.addEventListener("input", () => { autoFilled = false; }));
   tplSel.addEventListener("change", () => {
-    selectedHosts = new Set([...selectedHosts].filter((id) => S.meta.templates[tplSel.value].kinds.includes(S.hosts.find((x) => x.id === id)?.kind)));
-    const ref = sameTpl(tplSel.value);
-    if (isNew && ref && !cmdIn.value) { cmdIn.value = ref.command; argsIn.value = ref.args.join("\n"); cwdIn.value = ref.cwd; }
+    const t = S.meta.templates[tplSel.value];
+    selectedHosts = new Set([...selectedHosts].filter((id) => t.kinds.includes(S.hosts.find((x) => x.id === id)?.kind)));
+    if (isNew && (autoFilled || !cmdIn.value)) {
+      const ref = sameTpl(tplSel.value);
+      if (ref) {
+        cmdIn.value = ref.command; argsIn.value = ref.args.join("\n"); cwdIn.value = ref.cwd || ""; autoFilled = true;
+      } else if (t.default_command) {
+        cmdIn.value = t.default_command; argsIn.value = (t.default_args || []).join("\n"); cwdIn.value = t.default_cwd || ""; autoFilled = true;
+      } else if (autoFilled) {
+        cmdIn.value = ""; argsIn.value = ""; cwdIn.value = "";
+      }
+    }
     renderHosts();
   });
 
@@ -530,7 +548,8 @@ function viewHosts(view) {
     h("thead", {}, h("tr", {}, ["", "Name", "Kind", "Address", "User", "Auth", "Used by", ""].map((x) => h("th", {}, x)))),
     h("tbody", {}, S.hosts.map((x) => {
       const st = S.status.hosts[x.id];
-      const auth = x.auth === "key" ? "key" : x.secrets_set.password ? "password" : "no password";
+      const isAgent = x.kind === "windows" && x.protocol === "agent";
+      const auth = isAgent ? (x.secrets_set.password ? "agent key" : "no agent key") : (x.auth === "key" ? "key" : x.secrets_set.password ? "password" : "no password");
       const off = x.enabled === false;
       return [h("tr", { class: off ? "row-disabled" : "" },
         h("td", {}, h("span", { class: "dot " + (st ? (st.ok ? "ok" : "bad") : ""), title: st ? st.summary : "not tested" })),
@@ -539,7 +558,7 @@ function viewHosts(view) {
         h("td", {}, S.meta.kinds[x.kind] + (x.kind === "windows" ? ` · ${x.protocol.toUpperCase()}` : "")),
         h("td", { class: "mono" }, `${x.address}:${x.port}`),
         h("td", { class: "mono" }, x.username || "—"),
-        h("td", {}, h("span", { class: "tag " + (auth === "no password" ? "warn" : "keep") }, auth)),
+        h("td", {}, h("span", { class: "tag " + (auth.startsWith("no ") ? "warn" : "keep") }, auth)),
         h("td", { class: "mono small wrap" }, x.used_by.join(", ") || h("span", { class: "muted" }, "—")),
         h("td", {}, h("div", { class: "actions" },
           h("button", { class: "btn sm", onclick: (e) => testHost(x, e.target) }, "Test"),
@@ -567,7 +586,7 @@ async function setHostEnabled(x, enabled, after) {
   try {
     await api("POST", "/api/hosts", { ...hostPayload(x), enabled });
     await reload();
-    toast(enabled ? `${x.name} enabled` : `${x.name} disabled: its servers stop receiving it the next time they start`);
+    toast(enabled ? `${x.name} enabled (running servers updated)` : `${x.name} disabled (stopped on running servers)`);
     if (after) after();
   } catch (e) { fail(e); }
 }
@@ -638,14 +657,32 @@ function editHost(x, opts = {}) {
   const err = h("div", { class: "error" });
 
   const protoF = field("Protocol", protoSel), sslF = check("Use HTTPS (port 5986)", sslIn), authF = field("Authentication", authSel);
-  const pwF = field("Password", pw.el, x && v.secrets_set.password ? "Leave empty to keep the current password." : null);
+  const userF = field("Username", userIn);
+  const pwF = field("Password", pw.el, x && v.secrets_set.password ? "Leave empty to keep the current value." : null);
   const keyF = field("Private key path", keyIn), sudoF = field("sudo password", sudo.el, "Only if it differs from the login password.");
   const roF = check("Read-only (the server refuses write operations, where supported)", roIn);
+  const agentCmdEl = h("code", { class: "mono", style: "flex:1;overflow-wrap:anywhere" });
+  const agentCmd = () => {
+    const p = portIn.value.trim();
+    const prefix = p && p !== "5990" ? `$env:WINMCP_PORT = '${p}'; ` : "";
+    return `${prefix}irm https://raw.githubusercontent.com/ravThirst/mcp-vault/main/agent/launch.ps1 | iex`;
+  };
+  const copyAgentBtn = h("button", { class: "btn sm", type: "button", onclick: async () => {
+    try { await navigator.clipboard.writeText(agentCmd()); toast("Copied PowerShell launch command"); }
+    catch { toast("Copy failed; select the command manually", true); }
+  } }, "Copy");
+  const agentBox = h("div", { class: "status", style: "display:flex;flex-direction:column;gap:6px" },
+    h("div", {}, "On the target Windows machine, run in PowerShell (or use the ", h("code", { class: "mono" }, "agent\\"), " folder) and paste the printed key below:"),
+    h("div", { style: "display:flex;gap:8px;align-items:center" }, agentCmdEl, copyAgentBtn));
   function sync() {
     const win = kindSel.value === "windows", winrm = win && protoSel.value === "winrm", agent = win && protoSel.value === "agent";
     protoF.style.display = win ? "" : "none";
     sslF.style.display = winrm ? "" : "none";
+    agentBox.style.display = agent ? "flex" : "none";
+    agentCmdEl.textContent = agentCmd();
     authF.style.display = winrm || agent ? "none" : "";
+    userF.firstChild.textContent = agent ? "Username (optional)" : "Username";
+    pwF.firstChild.textContent = agent ? "Agent key" : "Password";
     const key = !winrm && !agent && authSel.value === "key";
     pwF.style.display = key ? "none" : ""; keyF.style.display = key ? "" : "none";
     sudoF.style.display = kindSel.value === "linux" ? "" : "none";
@@ -653,6 +690,7 @@ function editHost(x, opts = {}) {
     portIn.placeholder = String(winrm ? (sslIn.checked ? 5986 : 5985) : agent ? 5990 : 22);
   }
   [kindSel, protoSel, authSel, sslIn].forEach((el) => el.addEventListener("change", sync));
+  portIn.addEventListener("input", () => { if (kindSel.value === "windows" && protoSel.value === "agent") agentCmdEl.textContent = agentCmd(); });
 
   async function save() {
     err.textContent = "";
@@ -671,11 +709,12 @@ function editHost(x, opts = {}) {
     h("div", { class: "row" }, field("Name", nameIn), field("Kind", kindSel)),
     h("div", { class: "row" }, field("Address", addrIn), protoF, h("div", { class: "field", style: "flex:0 0 110px" }, h("span", {}, "Port"), portIn)),
     sslF,
-    h("div", { class: "row" }, field("Username", userIn), authF),
+    agentBox,
+    h("div", { class: "row" }, userF, authF),
     pwF, keyF, sudoF, roF,
     check("Enabled (servers receive this host; disable to keep it without using it)", enIn),
     field("Description", descIn),
-    x?.used_by?.length ? h("div", { class: "muted small" }, "Used by: ", x.used_by.join(", "), ". Running servers pick up changes when they restart.") : null,
+    x?.used_by?.length ? h("div", { class: "muted small" }, "Used by: ", x.used_by.join(", "), ". Running servers pick up changes automatically.") : null,
     err,
   ], [h("button", { class: "btn", onclick: () => closeDialog(layer) }, "Cancel"), h("button", { class: "btn primary", onclick: save }, "Save")], false, layer);
   sync();
@@ -717,7 +756,7 @@ async function viewApps(view) {
       const good = results.filter((r) => r.ok);
       if (good.length) openDialog("Applied", good.map((r) => h("div", { class: "status ok" }, h("b", {}, S.meta.clients[r.client].label), ": updated. ", r.reload)),
         [h("button", { class: "btn primary", onclick: closeDialog }, "OK")]);
-      render();
+      await reload();
     } catch (e) { fail(e); applyBtn.disabled = false; }
   } }, "Apply selected");
   view.querySelector(".section-head").append(h("div", { class: "spacer" }), applyBtn);
@@ -729,7 +768,7 @@ async function viewApps(view) {
         h("tbody", {}, list.slice(0, 20).map((b) => h("tr", {}, h("td", { class: "mono" }, b.time), h("td", {}, b.label),
           h("td", {}, h("button", { class: "btn sm", onclick: async () => {
             if (!confirm(`Restore ${b.label} config from ${b.time}? The current file is backed up first.`)) return;
-            try { const r = await api("POST", "/api/backups/restore", { name: b.name }); toast(`Restored. ${r.reload}`); render(); } catch (e) { fail(e); }
+            try { const r = await api("POST", "/api/backups/restore", { name: b.name }); toast(`Restored. ${r.reload}`); await reload(); } catch (e) { fail(e); }
           } }, "Restore")))))))
         : h("div", { class: "muted small" }, "No backups yet. One is made every time a config file is changed."));
   } catch (e) { fail(e); }
@@ -753,10 +792,11 @@ async function viewImport(view) {
     return h("div", { class: "card" + (disabled ? " off" : "") },
       h("div", { class: "card-head" }, check(h("b", { class: "mono" }, p.id), picks[p.id]), h("span", { class: "badge" }, S.meta.templates[p.template]?.label || p.template),
         h("div", { class: "spacer" }), p.exists ? h("span", { class: "tag keep" }, "already in vault") : null),
-      h("div", { class: "small muted" }, "Found in: ", p.clients.map((c) => S.meta.clients[c]?.label || c).join(", ")),
+      h("div", { class: "small muted" }, "Found in: ", (p.found_in || p.clients).map((c) => S.meta.clients[c]?.label || c).join(", "),
+        " · Install into: ", p.clients.map((c) => S.meta.clients[c]?.label || c).join(", ")),
       h("div", { class: "mono small", style: "overflow-wrap:anywhere" }, [p.command, ...p.args].join(" ")),
-      p.hosts.length ? h("div", {}, p.hosts.map((x) => h("div", { class: "small" }, h("b", {}, x.name), h("span", { class: "mono muted" }, `  ${x.username}@${x.address}:${x.port || "default"}`),
-        x.has_password ? h("span", { class: "tag ok", style: "margin-left:6px" }, "password found") : x.auth === "key" ? h("span", { class: "tag keep", style: "margin-left:6px" }, "key") : null))) : null,
+      p.hosts.length ? h("div", {}, p.hosts.map((x) => h("div", { class: "small" }, h("b", {}, x.name), h("span", { class: "mono muted" }, `  ${x.username ? x.username + "@" : ""}${x.address}:${x.port || "default"}`),
+        x.has_password ? h("span", { class: "tag ok", style: "margin-left:6px" }, x.protocol === "agent" ? "agent key found" : "password found") : x.auth === "key" ? h("span", { class: "tag keep", style: "margin-left:6px" }, "key") : null))) : null,
       Object.keys(p.env).length ? h("div", { class: "small muted" }, "Env: ", h("span", { class: "mono" }, Object.keys(p.env).join(", "))) : null,
       secrets.length ? h("div", { class: "small muted" }, "Secret env: ", h("span", { class: "mono" }, secrets.join(", "))) : null,
       p.warnings.map((w) => h("div", { class: "status warn" }, w)));
