@@ -183,6 +183,40 @@ def is_vault_agent_cmdline(cmdline: str) -> bool:
     return bool(re.search(r"vault\.py\"?\s+agent\s*$", cmdline.strip(), re.IGNORECASE))
 
 
+def process_user() -> str:
+    """Windows account this process runs as (from its token, not the environment)."""
+    buf = ctypes.create_unicode_buffer(257)
+    size = wt.DWORD(257)
+    try:
+        if ctypes.WinDLL("advapi32").GetUserNameW(buf, ctypes.byref(size)):
+            return buf.value
+    except OSError:
+        pass
+    return ""
+
+
+def foreign_user() -> str | None:
+    """The account name when this process runs as a different Windows user than the
+    profile it works for, e.g. Codex's sandbox accounts (CodexSandboxOnline/Offline),
+    which run shell commands with the real user's environment. None when normal."""
+    me = process_user()
+    if not me:
+        return None
+    owner = os.environ.get("USERNAME", "")
+    if me.lower().startswith("codexsandbox") or (owner and me.lower() != owner.lower()):
+        return me
+    return None
+
+
+def foreign_user_message(user: str) -> str:
+    owner = os.environ.get("USERNAME") or "your account"
+    return (f"this command runs as Windows user '{user}' (Codex's sandbox runs shell commands as separate "
+            f"accounts), not as '{owner}', so it cannot start, stop or reliably reach MCP Vault's agent. "
+            "Use the server's MCP tools instead (e.g. win_test_connection / ubuntu_test_connection), or run "
+            "the vault.py command outside the sandbox (request escalated permissions); if MCP Vault is not "
+            "running, ask the user to open it from the Start menu")
+
+
 def stop_menu_shortcut_path() -> str:
     return os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Stop MCP Vault.lnk")
 

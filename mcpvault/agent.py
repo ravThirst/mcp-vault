@@ -18,6 +18,7 @@ import re
 import secrets
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -737,7 +738,8 @@ def _bind_or_take_over(handler) -> "ExclusiveHTTPServer | None":
     try:
         os.kill(pid, 9)  # TerminateProcess on Windows
     except OSError as exc:
-        log.error("could not end pid %s (%s); it may run as administrator. Run \"Stop MCP Vault\" "
+        log.error("could not end pid %s (%s); it may run as administrator or as another Windows account (e.g. "
+                  "Codex's CodexSandboxOnline). Run \"Stop MCP Vault\" "
                   "from an elevated prompt or sign out and in again; exiting (pid %s)", pid, exc, os.getpid())
         return None
     for _ in range(20):
@@ -751,6 +753,12 @@ def _bind_or_take_over(handler) -> "ExclusiveHTTPServer | None":
 
 
 def serve() -> int:
+    foreign = winutil.foreign_user()
+    if foreign:
+        # An agent owned by a sandbox account fights the user's own agent for the port and
+        # token file, and the user's processes cannot stop it. Never start one.
+        print(f"mcp-vault agent: refusing to start: {winutil.foreign_user_message(foreign)}", file=sys.stderr)
+        return 5
     paths.ensure_dirs()
     logging.basicConfig(filename=paths.AGENT_LOG, level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")

@@ -25,7 +25,11 @@ def _status() -> int:
 
     client = AgentClient()
     if not client.ping():
-        print(f"agent: not running ({client.diagnose()})")
+        from . import winutil
+
+        foreign = winutil.foreign_user()
+        print(f"agent: not reachable ({winutil.foreign_user_message(foreign)})" if foreign
+              else f"agent: not running ({client.diagnose()})")
         return 1
     _, body = client.call("GET", "/internal/ping")
     print(f"agent: running on 127.0.0.1:{client.port}, vault {'unlocked' if body.get('unlocked') else 'locked'}")
@@ -40,6 +44,10 @@ def _stop(force: bool) -> int:
     from . import winutil
     from .launcher import AgentClient
 
+    foreign = winutil.foreign_user()
+    if foreign:
+        print(f"mcp-vault: not stopping anything: {winutil.foreign_user_message(foreign)}", file=sys.stderr)
+        return 5
     client = AgentClient()
     stopped = False
     if client.ping():

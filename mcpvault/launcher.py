@@ -150,9 +150,9 @@ class AgentClient:
         except OSError:
             listening = False
         if listening:
-            return (f"something is listening on 127.0.0.1:{paths.PORT}, but {reason}. An agent from 0.4.4 on repairs "
-                    "this within seconds; otherwise run `vault.py stop --force` (Start menu: Stop MCP Vault; as "
-                    "administrator if MCP Vault was started elevated), then retry")
+            return (f"something is listening on 127.0.0.1:{paths.PORT}, but {reason}. The agent repairs this "
+                    "within seconds; otherwise ask the user to open MCP Vault from the Start menu (it replaces a "
+                    "stuck agent), or run `vault.py stop --force` yourself if you are not in a sandboxed shell")
         return reason
 
     def unlocked(self) -> bool:
@@ -179,6 +179,11 @@ class AgentClient:
             return False
 
     def ensure_running(self) -> None:
+        if self.ping():
+            return
+        foreign = winutil.foreign_user()
+        if foreign:
+            raise LauncherError(f"MCP Vault's agent is not reachable and {winutil.foreign_user_message(foreign)}")
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
             if self.ping():

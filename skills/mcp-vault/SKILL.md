@@ -107,11 +107,19 @@ $V = if (Test-Path "$env:APPDATA\mcp-vault\app_dir.txt") { (Get-Content "$env:AP
 Exit code 4 means the agent is not running or the vault is locked: ask the user
 to open **MCP Vault** from the Start menu and unlock it, then retry. Do not
 try to work around it (no browser/UI automation, no reading `agent.json` yourself).
-If the message says the agent **cannot be reached from here** (something listens on
-port 47821 but the token file is missing or belongs to another agent; the user sees
-the UI working), wait 3 s and retry once: agents from 0.4.4 restore the file
-themselves. If it persists, run `vault.py stop --force` (tell the user the vault will
-lock), then `vault.py ui`, ask the user to unlock, and retry.
+
+**Codex on Windows: shell commands may run as a different Windows account.** With
+`[windows] sandbox = "elevated"`, Codex runs shell commands as `CodexSandboxOnline` /
+`CodexSandboxOffline`, while the MCP servers it starts run as the user. So:
+- Prefer the MCP tools (`win_test_connection`, `ubuntu_test_connection`, ...): they run as the user.
+- Read-only `vault.py` commands (`list`, `show`, `test host`, `test server`) work from the sandbox
+  as long as MCP Vault is running.
+- **Never run `vault.py stop`, `stop --force` or `ui` from a sandboxed shell.** An agent started
+  or stopped from a sandbox account fights the user's own agent (MCP Vault refuses these since
+  0.4.5 and says so). If the agent is unreachable, ask the user to open **MCP Vault** from the
+  Start menu (it replaces a stuck agent by itself), unlock it, then retry.
+- If a message says the agent **cannot be reached from here**, wait 3 s and retry once (the agent
+  restores its token file itself); if it persists, ask the user to open MCP Vault from the Start menu.
 
 ### Templates & bundled servers
 
@@ -166,8 +174,9 @@ Work from the outside in: agent → server process → remote host.
    "could not start the MCP Vault agent" with `agent.log` repeating "another agent is
    already listening" means a stuck agent (often from an older version or another
    install folder) holds port 47821. Since 0.4.1 a new agent ends such a process
-   itself; otherwise run `vault.py stop --force` (Start menu → **Stop MCP Vault**) and
-   retry. "used by another program" in `agent.log` means a non-MCP-Vault process owns
+   itself; otherwise ask the user to run **Stop MCP Vault** from the Start menu (as
+   administrator if `agent.log` says "could not end pid ... another Windows account"),
+   then open MCP Vault again. "used by another program" in `agent.log` means a non-MCP-Vault process owns
    the port: tell the user its PID/command line from the log; do not kill it.
 2. **`list`**. Check that the server is enabled, lists the current client under `apps`,
    and has the expected hosts enabled. If the client lacks the server, run

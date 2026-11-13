@@ -41,6 +41,12 @@
         foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
         if ($ids.Count) {
             for ($i = 0; $i -lt 20 -and (& $listener); $i++) { Start-Sleep -Milliseconds 250 }
+            # Agents owned by another account (Codex's sandbox users, an elevated window) survive Stop-Process.
+            foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CommandLine -match 'vault\.py"?\s+agent\s*$' })) {
+                $owner = try { (Invoke-CimMethod -InputObject $p -MethodName GetOwner -ErrorAction Stop).User } catch { '?' }
+                Say "Could not close MCP Vault agent PID $($p.ProcessId) (runs as '$owner'). Run this installer from an administrator PowerShell, or sign out and back in." 'Yellow'
+            }
         }
         # Only the spawn claim: a live agent restores agent.json itself, and deleting it while an
         # app restarts an agent would leave that agent unreachable.

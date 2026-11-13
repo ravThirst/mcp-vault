@@ -30,6 +30,11 @@ class CliError(Exception):
 def _client() -> AgentClient:
     c = AgentClient()
     if not c.ping():
+        from . import winutil
+
+        foreign = winutil.foreign_user()
+        if foreign:
+            raise CliError(f"The MCP Vault agent cannot be reached: {winutil.foreign_user_message(foreign)}.", 4)
         why = c.diagnose()
         if "listening" in why:
             raise CliError(f"The MCP Vault agent cannot be reached from here: {why}.", 4)
