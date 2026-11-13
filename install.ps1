@@ -51,7 +51,7 @@
         if ($updating) {
             # Stop a running agent so the new code is used; it starts again (locked) on demand.
             $py = Join-Path $dir '.venv\Scripts\python.exe'
-            if (Test-Path $py) { try { & $py (Join-Path $dir 'vault.py') stop | Out-Null } catch { } }
+            if (Test-Path $py) { try { & $py (Join-Path $dir 'vault.py') stop --force | Out-Null } catch { } }
             # Replace the code folders wholesale so files removed upstream disappear;
             # .venv, NOTES-local.md and anything else of yours stays.
             foreach ($d in 'mcpvault', 'skills', 'servers') {

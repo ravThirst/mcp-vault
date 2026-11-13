@@ -152,6 +152,12 @@ Work from the outside in: agent → server process → remote host.
    password window on the first tool call. "MCP Vault is locked, so this server could
    not start" means that window was cancelled or timed out; ask the user to unlock
    and retry.
+   "could not start the MCP Vault agent" with `agent.log` repeating "another agent is
+   already listening" means a stuck agent (often from an older version or another
+   install folder) holds port 47821. Since 0.4.1 a new agent ends such a process
+   itself; otherwise run `vault.py stop --force` (Start menu → **Stop MCP Vault**) and
+   retry. "used by another program" in `agent.log` means a non-MCP-Vault process owns
+   the port: tell the user its PID/command line from the log; do not kill it.
 2. **`list`**. Check that the server is enabled, lists the current client under `apps`,
    and has the expected hosts enabled. If the client lacks the server, run
    `apply --dry-run`: a pending change means `apply` was never run.

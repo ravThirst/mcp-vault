@@ -37,7 +37,7 @@ if not errorlevel 1 goto :install
 :rebuild_venv
 echo  The existing .venv is broken (copied from another PC or Python was removed). Recreating it...
 rem A running agent keeps .venv files open; stop it first (this command only needs the standard library).
-%PY% "%APP%vault.py" stop >nul 2>&1
+%PY% "%APP%vault.py" stop --force >nul 2>&1
 set /a TRIES=0
 :remove_venv
 rmdir /s /q "%VENV%" 2>nul

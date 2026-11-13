@@ -38,7 +38,7 @@ import time
 from . import adapters, paths, toolcache, winutil
 
 UNLOCK_TIMEOUT = float(os.environ.get("MCPVAULT_UNLOCK_TIMEOUT", "180"))
-SPAWN_CLAIM_TTL = 10
+SPAWN_CLAIM_TTL = 20
 EAGER = bool(os.environ.get("MCPVAULT_EAGER"))
 POLL_SEC = float(os.environ.get("MCPVAULT_POLL_SEC", "2"))
 
@@ -153,14 +153,23 @@ class AgentClient:
             return False
 
     def ensure_running(self) -> None:
-        deadline = time.monotonic() + 25
+        deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
             if self.ping():
                 return
             if self._claim_spawn():
                 winutil.spawn_detached([paths.python_windowed(), paths.ENTRY, "agent"], paths.APP_DIR)
             time.sleep(0.3)
-        raise LauncherError(f"could not start the MCP Vault agent (see {paths.AGENT_LOG})")
+        detail = ""
+        try:
+            with open(paths.AGENT_LOG, encoding="utf-8", errors="replace") as fh:
+                last = [ln.strip() for ln in fh.readlines()[-20:] if " ERROR " in ln or " WARNING " in ln]
+            if last:
+                detail = f": {last[-1].split(' ', 3)[-1]}"
+        except OSError:
+            pass
+        raise LauncherError(f"could not start the MCP Vault agent{detail} (see {paths.AGENT_LOG}; "
+                            "\"Stop MCP Vault\" from the Start menu clears a stuck agent)")
 
 
 def obtain(server_id: str) -> tuple[int, dict]:

@@ -142,6 +142,47 @@ def agent_pids(entry: str) -> list[int]:
     return [int(x) for x in out.split() if x.strip().isdigit() and int(x) != os.getpid()]
 
 
+def port_owner(port: int) -> int | None:
+    """PID of the process listening on 127.0.0.1/0.0.0.0:`port` (TCP), or None."""
+    try:
+        raw = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True,
+                             creationflags=0x08000000, timeout=10).stdout or b""
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = raw.decode("oem", errors="replace")  # netstat prints in the console code page
+    for line in out.splitlines():
+        parts = line.split()
+        # TCP  127.0.0.1:47821  0.0.0.0:0  LISTENING  1234  (state is localized on some systems)
+        if len(parts) >= 5 and parts[0].upper() == "TCP" and parts[1].rsplit(":", 1)[-1] == str(port) \
+                and parts[2].endswith(":0") and parts[-1].isdigit():
+            return int(parts[-1])
+    return None
+
+
+def process_cmdline(pid: int) -> str:
+    """Command line of `pid` ('' if it cannot be read)."""
+    import base64
+
+    script = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+              f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine")
+    try:
+        raw = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+             base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
+            capture_output=True, creationflags=0x08000000, timeout=20,
+        ).stdout or b""
+        return raw.decode("utf-8", errors="replace").strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def is_vault_agent_cmdline(cmdline: str) -> bool:
+    """True for `python[w] ...\\vault.py agent` from any MCP Vault folder."""
+    import re
+
+    return bool(re.search(r"vault\.py\"?\s+agent\s*$", cmdline.strip(), re.IGNORECASE))
+
+
 def stop_menu_shortcut_path() -> str:
     return os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Stop MCP Vault.lnk")
 

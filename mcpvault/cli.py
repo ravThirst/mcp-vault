@@ -51,14 +51,24 @@ def _stop(force: bool) -> int:
         while leftovers and time.monotonic() < deadline:
             time.sleep(0.5)
             leftovers = winutil.agent_pids(paths.ENTRY)
+        # An agent started from another MCP Vault folder (old install, share zip) that
+        # still holds the port would block every new agent; end it too.
+        holder = winutil.port_owner(paths.PORT)
+        if holder and holder not in leftovers and holder != os.getpid() and not client.ping() \
+                and winutil.is_vault_agent_cmdline(winutil.process_cmdline(holder)):
+            leftovers.append(holder)
         for pid in leftovers:
             try:
                 os.kill(pid, 9)  # TerminateProcess on Windows
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"agent: could not end pid {pid} ({exc}); try again from an elevated prompt")
         if leftovers:
             print(f"agent: ended {len(leftovers)} unresponsive agent process(es)")
             stopped = True
+        try:
+            os.remove(paths.SPAWN_LOCK)
+        except OSError:
+            pass
     print("agent: stopped" if stopped else "agent: not running")
     return 0
 

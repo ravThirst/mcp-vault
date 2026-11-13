@@ -682,16 +682,81 @@ class ExclusiveHTTPServer(http.server.ThreadingHTTPServer):
         super().server_bind()
 
 
+def _port_holder_answers(wait: float = 4.0) -> tuple[bool, str]:
+    """Whether the agent that owns the port answers /internal/ping with our token file.
+
+    Waits up to `wait` seconds: an agent that has just bound the port writes
+    agent.json a moment later. Returns (answers, reason-if-not)."""
+    from .launcher import AgentClient
+
+    deadline = time.monotonic() + wait
+    reason = "no answer"
+    while True:
+        client = AgentClient()
+        if not os.path.exists(paths.AGENT_FILE):
+            reason = "agent.json is missing"
+        else:
+            try:
+                status, _ = client.call("GET", "/internal/ping", timeout=2)
+                if status == 200:
+                    return True, ""
+                reason = f"ping answered HTTP {status}" + (" (token in agent.json does not match)" if status == 403 else "")
+            except OSError as exc:
+                reason = f"ping failed: {exc}"
+        if time.monotonic() >= deadline:
+            return False, reason
+        time.sleep(0.5)
+
+
+def _bind_or_take_over(handler) -> "ExclusiveHTTPServer | None":
+    """Bind the agent port. If it is held by an MCP Vault agent that no longer answers
+    (orphaned after an update, token file lost, hung), end that process and retry once."""
+    from . import winutil
+
+    try:
+        return ExclusiveHTTPServer(("127.0.0.1", paths.PORT), handler)
+    except OSError:
+        pass
+    answers, reason = _port_holder_answers()
+    if answers:
+        # Another agent already owns the port and works; the normal outcome of a start race.
+        log.info("another agent is already listening on 127.0.0.1:%s; exiting (pid %s)", paths.PORT, os.getpid())
+        return None
+    pid = winutil.port_owner(paths.PORT)
+    cmdline = winutil.process_cmdline(pid) if pid else ""
+    if not pid:
+        log.error("port %s is busy but its owner could not be identified (%s); exiting (pid %s)",
+                  paths.PORT, reason, os.getpid())
+        return None
+    if not winutil.is_vault_agent_cmdline(cmdline):
+        log.error("port %s is used by another program (pid %s: %s). Close it, or set MCPVAULT_PORT "
+                  "to a free port for MCP Vault; exiting (pid %s)", paths.PORT, pid, cmdline or "?", os.getpid())
+        return None
+    log.warning("an unresponsive MCP Vault agent holds port %s (pid %s, %s: %s); ending it and taking over",
+                paths.PORT, pid, reason, cmdline)
+    try:
+        os.kill(pid, 9)  # TerminateProcess on Windows
+    except OSError as exc:
+        log.error("could not end pid %s (%s); it may run as administrator. Run \"Stop MCP Vault\" "
+                  "from an elevated prompt or sign out and in again; exiting (pid %s)", pid, exc, os.getpid())
+        return None
+    for _ in range(20):
+        time.sleep(0.25)
+        try:
+            return ExclusiveHTTPServer(("127.0.0.1", paths.PORT), handler)
+        except OSError:
+            continue
+    log.error("port %s is still busy after ending pid %s; exiting (pid %s)", paths.PORT, pid, os.getpid())
+    return None
+
+
 def serve() -> int:
     paths.ensure_dirs()
     logging.basicConfig(filename=paths.AGENT_LOG, level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")
     agent = Agent()
-    try:
-        server = ExclusiveHTTPServer(("127.0.0.1", paths.PORT), make_handler(agent))
-    except OSError:
-        # Another agent already owns the port; that is the normal outcome of a start race.
-        log.info("another agent is already listening on 127.0.0.1:%s; exiting (pid %s)", paths.PORT, os.getpid())
+    server = _bind_or_take_over(make_handler(agent))
+    if server is None:
         return 3
     agent.server = server
     try:
@@ -708,6 +773,10 @@ def serve() -> int:
     try:
         server.serve_forever()
     finally:
+        try:
+            server.server_close()  # release the port now, even if the process lingers
+        except OSError:
+            pass
         agent.lock_vault("agent stopped")
         try:
             with open(paths.AGENT_FILE, encoding="utf-8") as fh:
