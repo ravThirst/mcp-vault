@@ -763,16 +763,38 @@ def serve() -> int:
         atomic_write(paths.APP_DIR_FILE, paths.APP_DIR.encode("utf-8"))
     except OSError:
         pass
-    atomic_write(paths.AGENT_FILE, json.dumps({"port": paths.PORT, "token": agent.token, "pid": os.getpid()}).encode())
+    info = {"port": paths.PORT, "token": agent.token, "pid": os.getpid()}
+    atomic_write(paths.AGENT_FILE, json.dumps(info).encode())
     try:
         os.remove(paths.SPAWN_LOCK)  # launchers waiting on the spawn claim can connect now
     except OSError:
         pass
+    stopping = threading.Event()
+
+    def keep_agent_file():
+        # The port holder is the only agent launchers can reach, so it owns agent.json. If the
+        # file is deleted (an installer, a cleanup) or overwritten, put it back; otherwise every
+        # launcher and CLI command would report "not running" while this agent serves the UI.
+        while not stopping.wait(2):
+            try:
+                with open(paths.AGENT_FILE, encoding="utf-8") as fh:
+                    current = json.load(fh)
+            except (OSError, ValueError):
+                current = None
+            if current != info:
+                try:
+                    atomic_write(paths.AGENT_FILE, json.dumps(info).encode())
+                    log.warning("agent.json was %s; restored it (pid %s)", "missing" if current is None else "replaced", os.getpid())
+                except OSError as exc:
+                    log.error("cannot restore agent.json: %s", exc)
+
+    threading.Thread(target=keep_agent_file, daemon=True).start()
     threading.Thread(target=agent.auto_lock_loop, daemon=True).start()
     log.info("agent %s listening on 127.0.0.1:%s (pid %s)", __version__, paths.PORT, os.getpid())
     try:
         server.serve_forever()
     finally:
+        stopping.set()
         try:
             server.server_close()  # release the port now, even if the process lingers
         except OSError:

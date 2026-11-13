@@ -23,7 +23,7 @@
     function Say($text, $color = 'Gray') { Write-Host "  $text" -ForegroundColor $color }
 
     # Close every running MCP Vault agent, whatever folder or version it was started
-    # from, and clear its runtime files (agent.json, agent.spawn) so the new version
+    # from, and clear its spawn claim (agent.spawn) so the new version
     # starts clean. Done in plain PowerShell so it never depends on the old code.
     # The vault itself (vault.json) is never touched; it simply locks.
     function Stop-VaultAgents {
@@ -42,7 +42,9 @@
         if ($ids.Count) {
             for ($i = 0; $i -lt 20 -and (& $listener); $i++) { Start-Sleep -Milliseconds 250 }
         }
-        foreach ($f in 'agent.json', 'agent.spawn') { Remove-Item (Join-Path $data $f) -Force -ErrorAction SilentlyContinue }
+        # Only the spawn claim: a live agent restores agent.json itself, and deleting it while an
+        # app restarts an agent would leave that agent unreachable.
+        Remove-Item (Join-Path $data 'agent.spawn') -Force -ErrorAction SilentlyContinue
         $ids.Count
     }
 

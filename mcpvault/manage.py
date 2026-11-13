@@ -30,7 +30,10 @@ class CliError(Exception):
 def _client() -> AgentClient:
     c = AgentClient()
     if not c.ping():
-        raise CliError(f"The MCP Vault agent is not running. {UI_HINT} and unlock it, then retry.", 4)
+        why = c.diagnose()
+        if "listening" in why:
+            raise CliError(f"The MCP Vault agent cannot be reached from here: {why}.", 4)
+        raise CliError(f"The MCP Vault agent is not running ({why}). {UI_HINT} and unlock it, then retry.", 4)
     return c
 
 

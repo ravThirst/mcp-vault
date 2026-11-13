@@ -41,7 +41,7 @@ version), then runs the setup below. Updates replace only the app code (`mcpvaul
 `skills`, `servers`, `agent`); `.venv` and your vault are kept, and installed AI
 client skills are refreshed automatically. Before copying, the installer closes
 every running MCP Vault agent (any folder or version; the vault just locks) and
-clears its runtime files, and afterwards repoints app entries that still launch
+clears its spawn claim, and afterwards repoints app entries that still launch
 servers from an older MCP Vault folder (`vault.py relink`). As with any `irm | iex`,
 you can read [install.ps1](install.ps1) first.
 

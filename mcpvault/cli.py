@@ -25,7 +25,7 @@ def _status() -> int:
 
     client = AgentClient()
     if not client.ping():
-        print("agent: not running")
+        print(f"agent: not running ({client.diagnose()})")
         return 1
     _, body = client.call("GET", "/internal/ping")
     print(f"agent: running on 127.0.0.1:{client.port}, vault {'unlocked' if body.get('unlocked') else 'locked'}")

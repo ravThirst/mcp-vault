@@ -106,7 +106,12 @@ $V = if (Test-Path "$env:APPDATA\mcp-vault\app_dir.txt") { (Get-Content "$env:AP
 
 Exit code 4 means the agent is not running or the vault is locked: ask the user
 to open **MCP Vault** from the Start menu and unlock it, then retry. Do not
-try to work around it.
+try to work around it (no browser/UI automation, no reading `agent.json` yourself).
+If the message says the agent **cannot be reached from here** (something listens on
+port 47821 but the token file is missing or belongs to another agent; the user sees
+the UI working), wait 3 s and retry once: agents from 0.4.4 restore the file
+themselves. If it persists, run `vault.py stop --force` (tell the user the vault will
+lock), then `vault.py ui`, ask the user to unlock, and retry.
 
 ### Templates & bundled servers
 

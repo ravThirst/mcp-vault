@@ -30,6 +30,7 @@ import http.client
 import json
 import os
 import queue
+import socket
 import subprocess
 import sys
 import threading
@@ -128,6 +129,31 @@ class AgentClient:
 
     def ping(self) -> bool:
         return self.state() is not None
+
+    def diagnose(self) -> str:
+        """Why ping() fails, in one line (no secrets)."""
+        if not os.path.exists(paths.AGENT_FILE):
+            reason = f"{paths.AGENT_FILE} is missing"
+        elif not self._load(force=True):
+            reason = f"{paths.AGENT_FILE} is unreadable"
+        else:
+            try:
+                status, _ = self._request("GET", "/internal/ping", None, 2)
+                reason = (f"the agent rejected the token in {paths.AGENT_FILE} (another agent's)" if status == 403
+                          else f"the agent answered HTTP {status}")
+            except OSError as exc:
+                reason = f"nothing answers on 127.0.0.1:{self.port} ({exc.__class__.__name__})"
+        try:
+            s = socket.create_connection(("127.0.0.1", paths.PORT), timeout=1)
+            s.close()
+            listening = True
+        except OSError:
+            listening = False
+        if listening:
+            return (f"something is listening on 127.0.0.1:{paths.PORT}, but {reason}. An agent from 0.4.4 on repairs "
+                    "this within seconds; otherwise run `vault.py stop --force` (Start menu: Stop MCP Vault; as "
+                    "administrator if MCP Vault was started elevated), then retry")
+        return reason
 
     def unlocked(self) -> bool:
         st = self.state()
