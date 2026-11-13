@@ -426,6 +426,61 @@ def read_config(client_id: str) -> tuple[dict, str | None]:
     return obj, raw
 
 
+def relink() -> list[dict]:
+    """Point vault launcher entries that still use another MCP Vault folder at this one.
+
+    Needs neither the agent nor the master password: launcher entries carry no
+    secrets, and only their interpreter and vault.py paths change. The file is
+    edited textually (the exact quoted old paths are replaced), so every other
+    entry, comment and setting stays byte-for-byte; a one-time `.pre-relink.bak`
+    copy is kept next to it."""
+    new_py, new_entry = paths.python_console(), paths.ENTRY
+    results = []
+    for cid, meta in CLIENTS.items():
+        try:
+            obj, raw = read_config(cid)
+        except (OSError, ValueError) as exc:
+            results.append({"client": cid, "error": str(exc)})
+            continue
+        if raw is None:
+            continue
+        swaps: dict[str, str] = {}
+        moved = []
+        for name, entry in (obj.get("mcpServers") or {}).items():
+            if not is_managed(entry):
+                continue
+            args = [a for a in entry.get("args") or [] if isinstance(a, str)]
+            old_entry = next((a for a in args if os.path.basename(_norm(a)) == "vault.py"), None)
+            old_py = entry.get("command") if isinstance(entry.get("command"), str) else None
+            changed = False
+            if old_entry and _norm(old_entry) != _norm(new_entry):
+                swaps[old_entry] = new_entry
+                changed = True
+            if old_py and old_entry and _norm(old_py) != _norm(new_py) \
+                    and _norm(os.path.dirname(old_entry)) in _norm(old_py):
+                # Only the interpreter of that old MCP Vault folder (its .venv), never a custom one.
+                swaps[old_py] = new_py
+                changed = True
+            if changed:
+                moved.append(name)
+        if not swaps:
+            continue
+        text = raw
+        for old, new in swaps.items():
+            # JSON strings and TOML basic strings escape paths the same way; TOML may also use literal '...'.
+            for ascii_only in (False, True):
+                text = text.replace(json.dumps(old, ensure_ascii=ascii_only), json.dumps(new, ensure_ascii=ascii_only))
+            text = text.replace(f"'{old}'", f"'{new}'")
+        if text == raw:
+            continue
+        bak = meta["path"] + ".pre-relink.bak"
+        if not os.path.exists(bak):
+            atomic_write(bak, raw.encode("utf-8"))
+        atomic_write(meta["path"], text.encode("utf-8"))
+        results.append({"client": cid, "label": meta["label"], "servers": moved})
+    return results
+
+
 def _desired(servers: list[dict], client_id: str) -> dict:
     typed = CLIENTS[client_id]["typed"]
     return {s["id"]: launcher_entry(s["id"], typed, client_id)

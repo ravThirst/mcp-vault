@@ -39,8 +39,11 @@ It downloads the code into `~\.mcp-servers\mcp-vault` (set `$env:MCPVAULT_DIR`
 first for another folder, `$env:MCPVAULT_REF = 'v0.4.0'` for a specific
 version), then runs the setup below. Updates replace only the app code (`mcpvault`,
 `skills`, `servers`, `agent`); `.venv` and your vault are kept, and installed AI
-client skills are refreshed automatically. As with any `irm | iex`, you can read
-[install.ps1](install.ps1) first.
+client skills are refreshed automatically. Before copying, the installer closes
+every running MCP Vault agent (any folder or version; the vault just locks) and
+clears its runtime files, and afterwards repoints app entries that still launch
+servers from an older MCP Vault folder (`vault.py relink`). As with any `irm | iex`,
+you can read [install.ps1](install.ps1) first.
 
 **Or manually:** **Code → Download ZIP** on GitHub and extract it anywhere, or
 `git clone`. Then double-click **`MCP Vault.bat`**, or use the Start-menu
@@ -103,6 +106,7 @@ the window.
 | `apply [--dry-run]` | write launcher entries into the apps' configs and refresh installed skills |
 | `logs <server> [-n N]` | tail a server's log |
 | `install-shortcut`, `install-skills [--force]`, `package [dir]` | Start-menu entries, agent skills (Claude Code / Kimi Work / Codex / Antigravity), share zip |
+| `relink` | repoint app entries that still launch servers from another MCP Vault folder at this one (no password needed; the installer runs it) |
 
 Exit codes: 0 ok, 1 error, 2 usage, 4 agent not running or vault locked.
 

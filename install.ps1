@@ -22,6 +22,30 @@
 
     function Say($text, $color = 'Gray') { Write-Host "  $text" -ForegroundColor $color }
 
+    # Close every running MCP Vault agent, whatever folder or version it was started
+    # from, and clear its runtime files (agent.json, agent.spawn) so the new version
+    # starts clean. Done in plain PowerShell so it never depends on the old code.
+    # The vault itself (vault.json) is never touched; it simply locks.
+    function Stop-VaultAgents {
+        $port = if ($env:MCPVAULT_PORT) { [int]$env:MCPVAULT_PORT } else { 47821 }
+        $data = if ($env:MCPVAULT_HOME) { $env:MCPVAULT_HOME } else { Join-Path $env:APPDATA 'mcp-vault' }
+        $listener = { try { Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1 } catch { $null } }
+        $ids = @(Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match 'vault\.py"?\s+agent\s*$' } | ForEach-Object { [int]$_.ProcessId })
+        $holder = & $listener
+        if ($holder -and $ids -notcontains [int]$holder.OwningProcess) {
+            $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($holder.OwningProcess)" -ErrorAction SilentlyContinue).CommandLine
+            if ($cmd -match 'vault\.py"?\s+agent\s*$') { $ids += [int]$holder.OwningProcess }
+            elseif ($cmd) { Say "Port $port is used by another program (PID $($holder.OwningProcess)): $cmd" 'Yellow' }
+        }
+        foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+        if ($ids.Count) {
+            for ($i = 0; $i -lt 20 -and (& $listener); $i++) { Start-Sleep -Milliseconds 250 }
+        }
+        foreach ($f in 'agent.json', 'agent.spawn') { Remove-Item (Join-Path $data $f) -Force -ErrorAction SilentlyContinue }
+        $ids.Count
+    }
+
     Write-Host ''
     Say 'MCP Vault installer' 'Cyan'
     Say '==================='
@@ -48,10 +72,9 @@
         $src = Get-ChildItem (Join-Path $tmp 'x') -Directory | Select-Object -First 1
         if (-not $src -or -not (Test-Path (Join-Path $src.FullName 'vault.py'))) { throw 'the download does not look like MCP Vault' }
 
+        $stopped = Stop-VaultAgents
+        if ($stopped) { Say "Closed $stopped running MCP Vault agent(s); the vault locks and reopens on demand." }
         if ($updating) {
-            # Stop a running agent so the new code is used; it starts again (locked) on demand.
-            $py = Join-Path $dir '.venv\Scripts\python.exe'
-            if (Test-Path $py) { try { & $py (Join-Path $dir 'vault.py') stop --force | Out-Null } catch { } }
             # Replace the code folders wholesale so files removed upstream disappear;
             # .venv, NOTES-local.md and anything else of yours stays.
             foreach ($d in 'mcpvault', 'skills', 'servers') {
@@ -93,6 +116,8 @@
     }
 
     Say 'Files are in place. Running setup (Python check, dependencies, shortcuts) ...' 'Green'
+    # Apps that were open during the copy may have restarted an agent from old code.
+    $null = Stop-VaultAgents
     $bat = Join-Path $dir 'MCP Vault.bat'
     # Start-Process passes the command line verbatim; PowerShell 5.1's own argument
     # passing breaks the nested quotes a path with spaces needs. Not -Wait: that also
@@ -105,13 +130,15 @@
         return
     }
 
-    # Ensure agent skills (and app_dir.txt) are installed on both fresh installs and updates.
+    # Ensure agent skills (and app_dir.txt) are installed on both fresh installs and updates,
+    # and repoint app configs that still launch servers from another MCP Vault folder.
     if (Test-Path $py) {
         $prevEap = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
             & $py (Join-Path $dir 'vault.py') install-skills --force *> $null
             if ($LASTEXITCODE -eq 0) { Say 'Installed/updated the agent skills.' }
+            & $py (Join-Path $dir 'vault.py') relink 2>$null | ForEach-Object { Say $_ }
             $global:LASTEXITCODE = 0
         } catch { } finally {
             $ErrorActionPreference = $prevEap

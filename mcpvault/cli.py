@@ -200,6 +200,15 @@ def main(argv: list[str]) -> int:
         return manage_main(argv)
     if cmd == "install-skills":
         return _install_skills("--force" in argv)
+    if cmd == "relink":
+        from .clients import relink
+
+        for r in relink():
+            if r.get("error"):
+                print(f"relink: {r['client']}: skipped ({r['error']})")
+            else:
+                print(f"relink: {r['label']}: {', '.join(r['servers'])} now use {paths.APP_DIR}")
+        return 0
     if cmd == "run":
         if len(argv) != 2:
             print("usage: vault.py run <server>", file=sys.stderr)
@@ -228,6 +237,6 @@ def main(argv: list[str]) -> int:
     if cmd == "package":
         return _package(argv[1] if len(argv) > 1 else None)
     print("usage: vault.py [ui | status | stop [--force] | list | show | templates | logs | host | server | test | apply\n"
-          "                 | run <server> | agent | install-shortcut | install-skills [--force] | package [dir]]\n"
+          "                 | run <server> | agent | install-shortcut | install-skills [--force] | relink | package [dir]]\n"
           "       vault.py <command> --help   for details", file=sys.stderr)
     return 2
