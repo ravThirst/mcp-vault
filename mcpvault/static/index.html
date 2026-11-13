@@ -305,6 +305,37 @@ function serverStatus(s) {
   return { st, running, dot: running ? "run" : st ? (!st.ok ? "bad" : hasWarn ? "warn" : "ok") : "" };
 }
 
+// Bundled servers (servers/windows-mcp, servers/ubuntu-mcp) shipped with MCP Vault.
+const bundledTemplates = () => Object.entries(S.meta.templates).filter(([, t]) => t.bundled && t.default_args?.length);
+const normPath = (p) => (p || "").replace(/\//g, "\\").toLowerCase();
+const usesBundled = (s, t) => t?.default_args?.length && s.args?.some((a) => normPath(a) === normPath(t.default_args[0]));
+
+function bundledPanel() {
+  const cards = bundledTemplates().map(([key, t]) => {
+    const users = S.servers.filter((s) => s.template === key);
+    const onBundled = users.filter((s) => usesBundled(s, t));
+    return h("div", { class: "card" },
+      h("div", { class: "card-head" }, h("b", { class: "mono" }, t.label), h("span", { class: "badge" }, `v${t.bundled.version}`),
+        h("span", { class: "badge" }, "bundled"), h("div", { class: "spacer" }),
+        onBundled.length ? h("span", { class: "tag ok" }, `in use: ${onBundled.map((s) => s.id).join(", ")}`) : null),
+      h("div", { class: "muted small" }, t.bundled.description || t.description),
+      h("div", { class: "actions" },
+        h("button", { class: "btn sm primary", onclick: () => editServer(null, { template: key, id: users.some((s) => s.id === t.bundled.default_id) ? "" : t.bundled.default_id }) },
+          onBundled.length ? "+ Add another" : "+ Add this server")));
+  });
+  if (!cards.length) return null;
+  return h("div", {}, h("h3", { style: "margin:18px 0 8px;font-size:15px" }, "Bundled with MCP Vault"),
+    h("p", { class: "muted small", style: "margin:0 0 10px" }, "Ready to run on MCP Vault's own Python: add one, pick or create its hosts, then Apply to apps."),
+    h("div", { class: "grid" }, cards));
+}
+
+async function useBundled(s, t, btn) {
+  btn.disabled = true;
+  const payload = { ...serverPayload(s), command: t.default_command, args: [...t.default_args], cwd: t.default_cwd || "" };
+  try { await api("POST", "/api/servers", payload); await reload(); toast(`${s.id} now runs the bundled ${t.label} ${t.bundled.version}; running apps reload it automatically`); }
+  catch (e) { fail(e); btn.disabled = false; }
+}
+
 function viewServers(view) {
   view.append(h("div", { class: "section-head" },
     h("div", {}, h("h2", {}, "MCP servers"),
@@ -313,7 +344,9 @@ function viewServers(view) {
     h("button", { class: "btn primary", onclick: () => editServer(null) }, "+ Add server")));
   if (!S.servers.length) {
     view.append(h("div", { class: "empty" }, "No servers yet. ",
-      h("a", { href: "#", onclick: (e) => { e.preventDefault(); go("import"); } }, "Import your existing MCP configs"), " or add one."));
+      h("a", { href: "#", onclick: (e) => { e.preventDefault(); go("import"); } }, "Import your existing MCP configs"), ", add a bundled server below, or add your own."));
+    const panel = bundledPanel();
+    if (panel) view.append(panel);
     return;
   }
   const hosts = Object.fromEntries(S.hosts.map((x) => [x.id, x]));
@@ -340,6 +373,9 @@ function viewServers(view) {
         running ? ` · ${running} running` : ""),
       st ? h("div", { class: "status " + (st.ok ? (st.warnings?.length ? "warn" : "ok") : "bad") }, `${st.time} · ${(st.summary || "").split(" — WARNING:")[0]}`) : null,
       ...(st?.warnings || []).map((w) => h("div", { class: "status warn" }, w)),
+      tpl?.bundled && !usesBundled(s, tpl) ? h("div", { class: "status warn", style: "display:flex;gap:8px;align-items:center" },
+        h("span", { style: "flex:1" }, `Runs ${s.command ? s.command.split(/[\\/]/).pop() : "?"} ${(s.args || []).map((a) => a.split(/[\\/]/).pop()).join(" ")}, not the bundled ${tpl.label} ${tpl.bundled.version}.`),
+        h("button", { class: "btn sm", title: "Point this server at the bundled server; hosts, apps and variables stay", onclick: (e) => useBundled(s, tpl, e.target) }, "Use bundled")) : null,
       h("div", { class: "actions" },
         h("button", { class: "btn sm", onclick: (e) => testServer(s, e.target) }, "Test"),
         h("button", { class: "btn sm", onclick: () => showLogs(s) }, "Logs"),
@@ -347,6 +383,8 @@ function viewServers(view) {
         h("div", { class: "spacer" }),
         h("button", { class: "btn sm danger", onclick: () => deleteServer(s) }, "Delete")));
   })));
+  const panel = bundledPanel();
+  if (panel) view.append(panel);
 }
 
 function serverPayload(s) {
@@ -397,11 +435,11 @@ async function showLogs(s) {
   load();
 }
 
-function editServer(s) {
+function editServer(s, preset = {}) {
   const isNew = !s;
   const sameTpl = (t) => S.servers.find((x) => x.template === t);
   const defaultClients = S.meta.installed_clients?.length ? S.meta.installed_clients : Object.keys(S.meta.clients);
-  const v = s ? structuredClone(s) : { id: "", description: "", template: "generic", command: "", args: [], cwd: "", env: {}, secret_env: {}, hosts: [], clients: [...defaultClients], enabled: true };
+  const v = s ? structuredClone(s) : { id: preset.id || "", description: "", template: preset.template || "generic", command: "", args: [], cwd: "", env: {}, secret_env: {}, hosts: [], clients: [...defaultClients], enabled: true };
   const envRows = [
     ...Object.entries(v.env).map(([k, val]) => ({ key: k, orig: k, value: val, secret: false, keep: false })),
     ...Object.entries(v.secret_env).map(([k, isSet]) => ({ key: k, orig: k, value: "", secret: true, keep: true, unset: !isSet })),
@@ -464,17 +502,19 @@ function editServer(s) {
     const t = S.meta.templates[tplSel.value];
     selectedHosts = new Set([...selectedHosts].filter((id) => t.kinds.includes(S.hosts.find((x) => x.id === id)?.kind)));
     if (isNew && (autoFilled || !cmdIn.value)) {
+      // The bundled server first: copying another server's command could copy an outdated package.
       const ref = sameTpl(tplSel.value);
-      if (ref) {
-        cmdIn.value = ref.command; argsIn.value = ref.args.join("\n"); cwdIn.value = ref.cwd || ""; autoFilled = true;
-      } else if (t.default_command) {
+      if (t.default_command) {
         cmdIn.value = t.default_command; argsIn.value = (t.default_args || []).join("\n"); cwdIn.value = t.default_cwd || ""; autoFilled = true;
+      } else if (ref) {
+        cmdIn.value = ref.command; argsIn.value = ref.args.join("\n"); cwdIn.value = ref.cwd || ""; autoFilled = true;
       } else if (autoFilled) {
         cmdIn.value = ""; argsIn.value = ""; cwdIn.value = "";
       }
     }
     renderHosts();
   });
+  if (isNew && preset.template) tplSel.dispatchEvent(new Event("change"));
 
   function renderEnv() {
     envBox.replaceChildren(...envRows.map((row, i) => {

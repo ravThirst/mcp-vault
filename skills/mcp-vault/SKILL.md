@@ -134,6 +134,12 @@ try to work around it.
 No `apply` or client restart needed; running launchers detect the vault revision
 change and hot-reload the child server automatically.
 
+**Switch a Windows/Linux server to the bundled server** (e.g. it runs an old or
+third-party package such as the 6-tool `win-mcp-server`): `server edit <id> --use-bundled`
+(template `windows-mcp` or `ubuntu-mcp`), then `test server <id>`. Hosts, apps and
+variables stay; running apps reload it automatically. In the UI: the server card's
+**Use bundled** button. `templates` prints the bundled paths and versions.
+
 **Point a server at another machine / enable or disable a host**: `server edit <id> --host <name>` (or
 `--add-host`/`--remove-host`, or `host edit <name> --enable|--disable`), `test server <id>`.
 Running client apps (Antigravity, Codex, Claude, Kimi) pick up the change automatically with no restart.

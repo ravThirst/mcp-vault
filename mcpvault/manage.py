@@ -133,11 +133,16 @@ def cmd_show(args) -> int:
 
 def cmd_templates(args) -> int:
     lines = []
+    meta = adapters.template_meta()
     for key, t in adapters.TEMPLATES.items():
         kinds = ", ".join(t["kinds"]) or "no hosts"
         count = "exactly 1" if t["max_hosts"] == 1 else ("none" if t["max_hosts"] == 0 else f"{t['min_hosts']}+")
         lines.append(f"  {key:<14} hosts: {count} ({kinds})\n  {'':<14} {t['description']}")
-    _out(args, adapters.TEMPLATES, "TEMPLATES\n" + "\n".join(lines))
+        b = meta.get(key, {}).get("bundled")
+        if b:
+            lines.append(f"  {'':<14} BUNDLED v{b['version']}: {meta[key]['default_args'][0]}  "
+                         f"(server add {b['default_id']} --template {key} --host <name>)")
+    _out(args, meta, "TEMPLATES\n" + "\n".join(lines))
     return 0
 
 
@@ -304,6 +309,11 @@ def cmd_server(args) -> int:
         payload["args"] = []
     if args.arg:
         payload["args"] = list(args.arg)
+    if getattr(args, "use_bundled", False):
+        bundled = _bundled_server_defaults(payload.get("template") or "")
+        if not bundled:
+            raise CliError("--use-bundled works with --template windows-mcp or ubuntu-mcp (bundled in servers/)", 2)
+        payload["command"], payload["args"], payload["cwd"] = bundled[0], list(bundled[1]), bundled[2]
 
     if args.host is not None:
         payload["hosts"] = [_find_host(snap, n)["id"] for n in args.host]
@@ -468,6 +478,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--command", help="executable to start (auto-filled for bundled windows-mcp / ubuntu-mcp if omitted)")
     p.add_argument("--arg", action="append", help="argument (repeat; replaces all arguments)")
     p.add_argument("--clear-args", action="store_true")
+    p.add_argument("--use-bundled", dest="use_bundled", action="store_true",
+                   help="point the server at the bundled windows-mcp / ubuntu-mcp (servers/ in the app folder)")
     p.add_argument("--cwd")
     p.add_argument("--description")
     p.add_argument("--inventory-env", dest="inventory_env", help="variable for the host inventory (template 'inventory')")

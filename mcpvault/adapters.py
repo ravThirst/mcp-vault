@@ -62,15 +62,33 @@ def bundled_server_entry(template: str) -> str | None:
     return None
 
 
+def bundled_info(template: str) -> dict | None:
+    """Name, version and description of a bundled server (from its server.json)."""
+    entry = bundled_server_entry(template)
+    if not entry:
+        return None
+    info = {"entry": entry, "version": "", "description": ""}
+    try:
+        with open(os.path.join(paths.APP_DIR, "servers", template, "server.json"), encoding="utf-8") as fh:
+            meta = json.load(fh)
+        info["version"] = str(meta.get("version") or "")
+        info["description"] = str(meta.get("description") or "")
+    except (OSError, ValueError):
+        pass
+    return info
+
+
 def template_meta() -> dict:
     """TEMPLATES enriched with bundled default_command/default_args/default_cwd when on disk."""
     out = copy.deepcopy(TEMPLATES)
     for key in ("windows-mcp", "ubuntu-mcp"):
-        entry = bundled_server_entry(key)
-        if entry and key in out:
+        info = bundled_info(key)
+        if info and key in out:
             out[key]["default_command"] = paths.python_console()
-            out[key]["default_args"] = [entry]
+            out[key]["default_args"] = [info["entry"]]
             out[key]["default_cwd"] = os.path.join(paths.APP_DIR, "servers", key)
+            out[key]["bundled"] = {"version": info["version"], "description": info["description"],
+                                   "default_id": {"windows-mcp": "windows", "ubuntu-mcp": "ubuntu"}[key]}
     return out
 
 
